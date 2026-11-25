@@ -2,18 +2,19 @@
 
 Submission is due November 29, 2026 at 20:59 WAT. Budget is $10 and approximately 20–25 development hours.
 
-## P0 · Phase 0 gate
+## P0 · Phase 0 accepted
 
 - [x] Inspect the environment, compare the starter with upstream and install Everything EvenHub.
 - [x] Install dependencies, brand the starter and pass the bridge smoke test, type check and build.
 - [x] Capture the initial greeting in the official simulator. Verify single tap increments and scrolling in either direction preserves the count.
 - [x] Verify double tap delivers the exit gesture and clears the simulator glasses display.
-- [ ] Verify the SDK exit confirmation dialog in the simulator UI or on physical G2 glasses. The simulator automation capture showed a cleared framebuffer after double tap.
+- [x] Accept Phase 0 with documented limitations. The SDK exit confirmation dialog, physical G2 behavior and physical package installation remain unverified.
 
 ## P0 · End-to-end vertical slice after Phase 0 passes
 
-- [ ] Build a deterministic FastAPI and SQLite flow for report intake, basic findings, evidence and review.
-- [ ] Add explicit acceptance, transactional receipts, version checks and idempotent retries. Cover stale state and duplicate actions with Pytest.
+- [x] Build a deterministic FastAPI and SQLite flow for report intake, basic findings, evidence and review.
+- [x] Add explicit acceptance, transactional receipts, version checks and idempotent retries. Cover stale state and duplicate actions with Pytest.
+- [ ] Independently review the deterministic Phase 1 workflow.
 - [ ] Connect the wearable queue, source evidence and confirmation screens to the API. Walk through a seeded shift in the simulator.
 - [ ] Verify real Notion import and write-back against a test data source. Exercise the sync outage and retry path.
 - [ ] Add Gemini structured proposals and evidence validation. Demonstrate the deterministic fallback.
