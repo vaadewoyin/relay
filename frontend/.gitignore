@@ -1,0 +1,14 @@
+node_modules/
+dist/
+*.ehpk
+*.log
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+.pytest_cache/
+*.sqlite*
+*.db
+*.db-wal
+*.db-shm

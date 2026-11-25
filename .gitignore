@@ -1,0 +1,46 @@
+# Local secrets and environment files
+.env
+.env.*
+!.env.example
+.npmrc
+.pypirc
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+secrets.json
+secrets/
+.aws/
+.agents/
+.codex/
+
+# Dependencies and Python environments
+node_modules/
+.venv/
+venv/
+ENV/
+__pycache__/
+*.py[cod]
+
+# Caches, build outputs and local artifacts
+.cache/
+.vite/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+coverage/
+artifacts/
+*.ehpk
+*.sqlite*
+*.db
+*.db-wal
+*.db-shm
+*.log
+*.tmp
+*.swp
+*~
+tmp/
+.DS_Store
