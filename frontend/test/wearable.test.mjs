@@ -136,3 +136,32 @@ test('connection recovery reaches the brief and an empty queue has a clear state
   await go('back')
   assert.match(frame(), /Shift brief/)
 })
+
+const handover = {
+  id: 'preview', status: 'previewed', version: 1,
+  outgoing_shift_id: 'day', incoming_shift_id: 'evening',
+  outgoing_operator_id: 'ada', incoming_operator_id: 'tunde',
+  actions: [
+    { action_id: 'pump', transferable: true, description: 'Test pump P-17.' },
+    { action_id: 'bypass', transferable: false, description: 'Assign bypass inspection.' },
+  ],
+}
+
+test('handover preview shows eligible and outstanding work without accepting it', async () => {
+  const commands = []
+  const { app, frame, go } = harness({
+    async preview(command) { commands.push(command); return handover },
+    async accept() { assert.fail('Preview is read-only for responsibility.') },
+  })
+  await app.start()
+  await go('down', 'tap')
+  assert.match(frame(), /1 eligible \| 1 stay outgoing/)
+  assert.match(frame(), /Will transfer\nTest pump P-17/)
+  await go('down')
+  assert.match(frame(), /Stays outgoing\nAssign bypass/)
+  await go('back')
+  assert.match(frame(), /Shift brief/)
+  assert.deepEqual(commands, [{
+    operation_id: 'operation-1', actor_id: 'ada', outgoing_shift_id: 'day', incoming_shift_id: 'evening',
+  }])
+})

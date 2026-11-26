@@ -1,5 +1,5 @@
 import { ApiError } from './api.ts'
-import type { Finding, RelayApi, ReviewCommand } from './api.ts'
+import type { Finding, Handover, PreviewCommand, RelayApi, ReviewCommand } from './api.ts'
 import type { ShiftContext } from './shift-context.ts'
 import { clip, display, evidencePages, findingTitles, menu, orderFindings, wrapText } from './view.ts'
 import type { EvidencePage } from './view.ts'
@@ -9,8 +9,9 @@ export type Gesture = 'up' | 'down' | 'tap' | 'back'
 type Brief = { kind: 'brief'; cursor: number }
 type Queue = { kind: 'queue'; cursor: number }
 type Detail = { kind: 'detail'; finding: Finding; cursor: number; queueIndex: number }
+type Preview = { kind: 'preview'; handover: Handover; cursor: number }
 type Screen =
-  | Brief | Queue | Detail
+  | Brief | Queue | Detail | Preview
   | { kind: 'evidence'; pages: EvidencePage[]; cursor: number; back: Detail }
   | { kind: 'review'; detail: Detail; cursor: number }
   | { kind: 'loading'; message: string }
@@ -83,11 +84,12 @@ export class Wearable {
 
   private async scroll(current: Extract<Screen, { cursor: number }>, direction: number) {
     const lengths = {
-      brief: 2,
+      brief: 3,
       queue: this.findings.length,
       detail: current.kind === 'detail' && current.finding.review_status === 'pending' ? 2 : 1,
       evidence: current.kind === 'evidence' ? current.pages.length : 0,
       review: 3,
+      preview: current.kind === 'preview' ? current.handover.actions.length : 0,
     }
     const cursor = move(current.cursor, lengths[current.kind], direction)
     if (cursor !== current.cursor) await this.show({ ...current, cursor })
@@ -100,6 +102,7 @@ export class Wearable {
         await this.exit()
         break
       case 'queue':
+      case 'preview':
         await this.show(brief())
         break
       case 'detail':
@@ -122,6 +125,7 @@ export class Wearable {
     switch (current.kind) {
       case 'brief':
         if (current.cursor === 0) await this.show({ kind: 'queue', cursor: 0 })
+        else if (current.cursor === 1) await this.openPreview()
         else await this.refresh(current)
         break
       case 'queue': {
@@ -171,6 +175,27 @@ export class Wearable {
       }
       await this.show({ kind: 'evidence', pages, cursor: 0, back: detail })
     }, 'Checking source evidence...', detail)
+  }
+
+  private async openPreview() {
+    const context = this.context
+    if (!context) return
+    const command: PreviewCommand = {
+      operation_id: this.operationId(),
+      actor_id: context.outgoingOperatorId,
+      outgoing_shift_id: context.outgoingShiftId,
+      incoming_shift_id: context.incomingShiftId,
+    }
+    await this.request(async () => {
+      const handover = await this.api.preview(command)
+      if (handover.status !== 'previewed' || handover.outgoing_shift_id !== command.outgoing_shift_id
+        || handover.incoming_shift_id !== command.incoming_shift_id
+        || handover.outgoing_operator_id !== command.actor_id
+        || handover.incoming_operator_id !== context.incomingOperatorId) {
+        throw new ApiError('invalid_response', 'Preview does not match the configured shifts.')
+      }
+      await this.show({ kind: 'preview', handover, cursor: 0 })
+    }, 'Preparing handover...', brief())
   }
 
   private async review(detail: Detail, outcome: ReviewCommand['outcome']) {
@@ -252,7 +277,7 @@ export class Wearable {
           clip(this.context?.shiftLabel ?? 'Incoming shift'),
           clip(this.context?.incomingName ?? ''),
           `${pending.length} awaiting review: ${high} high, ${warning} warning`,
-          ...menu(['Finding queue', 'Refresh'], screen.cursor),
+          ...menu(['Finding queue', 'Handover', 'Refresh'], screen.cursor),
         ], 'Scroll: Move | Tap: Open | Double tap: Exit')
       }
       case 'queue': {
@@ -280,6 +305,17 @@ export class Wearable {
           'Choose the review to record.',
           ...menu(['Cancel', 'Acknowledge finding', 'Dismiss finding'], screen.cursor),
         ], 'Scroll: Choose | Tap: Select | Double tap: Back')
+      case 'preview': {
+        const { actions } = screen.handover
+        const eligible = actions.filter(item => item.transferable).length
+        const selected = actions[screen.cursor]
+        return display('Handover preview', [
+          clip(this.context?.incomingName ?? 'Incoming operator'),
+          `${eligible} eligible | ${actions.length - eligible} stay outgoing`,
+          `${screen.cursor + 1}/${actions.length} | ${selected.transferable ? 'Will transfer' : 'Stays outgoing'}`,
+          ...wrapText(selected.description).slice(0, 3),
+        ], 'Scroll: Work items | Double tap: Back')
+      }
     }
   }
 }
