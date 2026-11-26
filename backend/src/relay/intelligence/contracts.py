@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import AwareDatetime, Field, StringConstraints, model_validator
 
-from relay.domain import Contract, Record, Severity
+from relay.domain import Contract, Record, SemanticKind, Severity
 
 type Statement = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=350)
@@ -15,16 +15,6 @@ type Quote = Annotated[
     str, StringConstraints(min_length=1, max_length=500, pattern=r"\S")
 ]
 type Count = Annotated[int, Field(ge=0)]
-
-
-class SemanticKind(StrEnum):
-    CONTRADICTION = "semantic_contradiction"
-    UNSUPPORTED_COMPLETION = "unsupported_completion"
-    AMBIGUOUS_OWNERSHIP = "ambiguous_ownership"
-    MISSING_CONTEXT = "missing_operational_context"
-    SAFETY_CONCERN = "unresolved_safety_concern"
-    INCONSISTENT_COMPLETION = "inconsistent_completion"
-    POTENTIAL_DUPLICATE = "potential_duplicate_incident"
 
 
 class ReviewAction(StrEnum):
@@ -154,6 +144,8 @@ class Execution(Record):
     proposal_count: Count
     rejected_count: Count
     duplicate_count: Count
+    rejected_proposal_count: Count = 0
+    validation_rejections: dict[str, Count] = Field(default_factory=dict)
     retry_count: Count
     finding_ids: tuple[UUID, ...] = ()
     abstention: Uncertainty | None = None

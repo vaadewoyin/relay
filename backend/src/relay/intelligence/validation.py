@@ -2,13 +2,12 @@ from dataclasses import dataclass
 from enum import StrEnum
 from uuid import UUID
 
-from relay.domain import EvidenceReference
+from relay.domain import EvidenceReference, SemanticKind
 from relay.intelligence.contracts import (
     Citation,
     Extraction,
     ProposalBatch,
     ProposedFinding,
-    SemanticKind,
 )
 from relay.intelligence.prompts import Sources
 

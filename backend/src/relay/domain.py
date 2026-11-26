@@ -148,6 +148,21 @@ class FindingType(StrEnum):
     CONTRADICTORY_ASSET_STATUS = "contradictory_asset_status"
 
 
+class SemanticKind(StrEnum):
+    CONTRADICTION = "semantic_contradiction"
+    UNSUPPORTED_COMPLETION = "unsupported_completion"
+    AMBIGUOUS_OWNERSHIP = "ambiguous_ownership"
+    MISSING_CONTEXT = "missing_operational_context"
+    SAFETY_CONCERN = "unresolved_safety_concern"
+    INCONSISTENT_COMPLETION = "inconsistent_completion"
+    POTENTIAL_DUPLICATE = "potential_duplicate_incident"
+
+
+class FindingOrigin(StrEnum):
+    DETERMINISTIC = "deterministic"
+    AI = "ai"
+
+
 class Severity(StrEnum):
     INFO = "info"
     WARNING = "warning"
@@ -166,13 +181,29 @@ class ReviewOutcome(StrEnum):
 
 
 class IntegrityFinding(Record):
-    type: FindingType
+    type: FindingType | SemanticKind
     severity: Severity
     explanation: Text
     evidence: Annotated[tuple[EvidenceReference, ...], Field(min_length=1)]
     recommended_action: Text
     review_status: ReviewStatus = ReviewStatus.PENDING
     created_at: AwareDatetime
+    origin: FindingOrigin = FindingOrigin.DETERMINISTIC
+    execution_id: UUID | None = None
+    uncertainty: Text | None = None
+
+    @model_validator(mode="after")
+    def validate_provenance(self) -> Self:
+        if self.origin == FindingOrigin.AI:
+            if self.execution_id is None or not isinstance(self.type, SemanticKind):
+                raise ValueError(
+                    "AI findings require a semantic kind and an execution reference."
+                )
+        elif self.execution_id is not None or isinstance(self.type, SemanticKind):
+            raise ValueError(
+                "Deterministic findings must use a deterministic finding type."
+            )
+        return self
 
 
 class ReviewDecision(Record):
