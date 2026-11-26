@@ -14,7 +14,7 @@ import uvicorn
 from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from starlette.exceptions import HTTPException
 
 from relay.domain import (
@@ -26,6 +26,11 @@ from relay.domain import (
     IntegrityFinding,
     ReviewDecision,
 )
+from relay.intelligence.analysis import AnalysisBudget, Analyzer
+from relay.intelligence.contracts import Execution
+from relay.intelligence.gemini import DEFAULT_MODEL, GeminiProvider
+from relay.intelligence.provider import ModelProvider
+from relay.intelligence.workflow import Intelligence
 from relay.service import (
     AcceptHandover,
     ActionUpdate,
@@ -48,6 +53,12 @@ def database_path() -> Path:
 
 class Health(BaseModel):
     status: Literal["ok"] = "ok"
+
+
+class AnalyzeShift(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    shift_id: UUID
+    operation_id: UUID
 
 
 class ValidationIssue(BaseModel):
@@ -78,7 +89,10 @@ def log_event(event: str, **fields: object) -> None:
 
 
 def create_app(
-    db_path: Path | None = None, *, clock: Callable[[], datetime] | None = None
+    db_path: Path | None = None,
+    *,
+    clock: Callable[[], datetime] | None = None,
+    model_provider: ModelProvider | None = None,
 ) -> FastAPI:
     store = SQLiteStore(db_path or database_path())
 
@@ -86,6 +100,17 @@ def create_app(
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         store.initialize()
         app.state.service = RelayService(store, clock) if clock else RelayService(store)
+        try:
+            provider = model_provider or GeminiProvider.from_environment()
+            budget = AnalysisBudget.from_environment()
+        except ValueError:
+            log_event("ai_configuration_invalid")
+            provider, budget = GeminiProvider(None, DEFAULT_MODEL), AnalysisBudget()
+        app.state.intelligence = Intelligence(
+            store,
+            Analyzer(provider, budget),
+            allow_operational_data=os.getenv("RELAY_AI_ALLOW_OPERATIONAL_DATA") == "1",
+        )
         log_event("database_ready")
         yield
 
@@ -239,6 +264,17 @@ def create_app(
     @app.get("/findings")
     def findings(service: Service) -> list[IntegrityFinding]:
         return service.findings()
+
+    @app.post("/ai/analyses")
+    async def analyze(command: AnalyzeShift, request: Request) -> Execution:
+        intelligence: Intelligence = request.app.state.intelligence
+        return await intelligence.run(
+            command.shift_id, command.operation_id, request.state.request_id
+        )
+
+    @app.get("/ai/analyses/{execution_id}")
+    def analysis(execution_id: UUID, service: Service) -> Execution:
+        return service.get(Execution, execution_id)
 
     @app.get("/findings/{finding_id}")
     def finding(finding_id: UUID, service: Service) -> IntegrityFinding:
