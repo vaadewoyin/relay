@@ -31,6 +31,9 @@ from relay.intelligence.contracts import Execution
 from relay.intelligence.gemini import DEFAULT_MODEL, GeminiProvider
 from relay.intelligence.provider import ModelProvider
 from relay.intelligence.workflow import Intelligence
+from relay.notion.client import NotionClient, NotionError, Sources
+from relay.notion.records import ImportResult, Publication, SyncStatus
+from relay.notion.sync import NotionSync
 from relay.service import (
     AcceptHandover,
     ActionUpdate,
@@ -53,6 +56,10 @@ def database_path() -> Path:
 
 class Health(BaseModel):
     status: Literal["ok"] = "ok"
+
+
+class ReceiptView(HandoverReceipt):
+    notion_sync: SyncStatus | None = None
 
 
 class AnalyzeShift(BaseModel):
@@ -111,8 +118,22 @@ def create_app(
             Analyzer(provider, budget),
             allow_operational_data=os.getenv("RELAY_AI_ALLOW_OPERATIONAL_DATA") == "1",
         )
+        notion_client = None
+        app.state.notion = None
+        if token := os.getenv("NOTION_TOKEN"):
+            try:
+                sources = Sources.from_environment()
+            except (KeyError, ValueError):
+                log_event("notion_configuration_incomplete")
+            else:
+                notion_client = NotionClient(token)
+                app.state.notion = NotionSync(notion_client, sources, store)
         log_event("database_ready")
-        yield
+        try:
+            yield
+        finally:
+            if notion_client is not None:
+                notion_client.close()
 
     app = FastAPI(
         title="Relay",
@@ -304,9 +325,53 @@ def create_app(
     ) -> HandoverReceipt:
         return service.accept(handover_id, command)
 
-    @app.get("/handover-receipts/{receipt_id}")
-    def receipt(receipt_id: UUID, service: Service) -> HandoverReceipt:
-        return service.get(HandoverReceipt, receipt_id)
+    def get_notion(request: Request) -> NotionSync:
+        sync = request.app.state.notion
+        if sync is None:
+            raise NotionError("not_configured")
+        return sync
+
+    @app.exception_handler(NotionError)
+    async def notion_failure(request: Request, exc: NotionError) -> JSONResponse:
+        return error(request, 503, exc.code, "Notion request unavailable.")
+
+    @app.get("/notion/connection")
+    def notion_connection(request: Request) -> Health:
+        get_notion(request).verify()
+        return Health()
+
+    @app.post("/notion/import")
+    def import_notion(request: Request) -> ImportResult:
+        result = get_notion(request).pull()
+        log_event(
+            "notion_import",
+            request_id=request.state.request_id,
+            **result.model_dump(exclude={"report_ids", "failures"}),
+        )
+        return result
+
+    @app.post("/notion/receipts/{receipt_id}/sync")
+    def sync_receipt(
+        receipt_id: UUID, service: Service, request: Request
+    ) -> tuple[Publication, ...]:
+        stored = service.get(HandoverReceipt, receipt_id)
+        result = get_notion(request).publish(stored)
+        log_event(
+            "notion_publication",
+            request_id=request.state.request_id,
+            receipt_id=str(receipt_id),
+            states=[item.state for item in result],
+        )
+        return result
+
+    @app.get("/handover-receipts/{receipt_id}", response_model_exclude_unset=True)
+    def receipt(receipt_id: UUID, service: Service, request: Request) -> ReceiptView:
+        stored = service.get(HandoverReceipt, receipt_id)
+        sync: NotionSync | None = request.app.state.notion
+        return ReceiptView(
+            **stored.model_dump(),
+            **({"notion_sync": sync.status(stored)} if sync else {}),
+        )
 
     return app
 
