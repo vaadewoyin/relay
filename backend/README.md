@@ -76,7 +76,7 @@ The first full live run completed 22/22 cases on `gemini-3.1-flash-lite` with `e
 
 ## Notion demo
 
-Create an internal integration in [Notion Integrations](https://www.notion.so/my-integrations). Enable Read, Insert, and Update content, then connect the integration to only a dedicated synthetic demo parent page. The adapter needs Read and Insert for its current append-only workflow. Set `NOTION_TOKEN` and `NOTION_PARENT_PAGE_ID` in ignored `backend/.env`. The safe [.env.example](.env.example) lists configuration names.
+Create an internal integration in [Notion Integrations](https://www.notion.so/my-integrations). Enable Read, Insert, and Update content, then connect the integration to only a dedicated synthetic demo parent page. The adapter uses Read, Insert, and Update for imports, publication, and guarded ownership updates. Set `NOTION_TOKEN` and `NOTION_PARENT_PAGE_ID` in ignored `backend/.env`. The safe [.env.example](.env.example) lists configuration names.
 
 From `backend/`, run `uv run --locked --env-file .env python -m relay.notion.demo provision`. Save the three returned data-source IDs in the same ignored file. You can also create the three databases manually with the property names and types in [the workspace schema](src/relay/notion/demo.py) and set their data-source IDs. If provisioning loses a response, inspect the parent page before repeating it. If some databases were already created, set their IDs first so provisioning can skip them.
 
@@ -92,7 +92,7 @@ uv run --locked --env-file .env python -m relay.api
 3. Launch the wearable using the saved context. Inspect the Notion-sourced evidence, review the finding, and explicitly accept the handover.
 4. Call `POST /notion/receipts/{receipt_id}/sync` for the stored receipt. Check **Handover Receipts** and **Action Register** in Notion, then call the same endpoint again. Reopen the wearable receipt to refresh its sync status.
 
-Imports are immutable snapshots. Report page IDs anchor idempotency, and an edited revision appears as an explicit review conflict. The Action Register appends an ownership event for each authorized transfer with a stable action ID and version. Sort by version for current ownership. Relay never rewrites external operator edits. A definite failure can be retried. An uncertain create queries for the same key and waits for reconciliation before any additional create. This favors preventing duplicates over automatic recovery when a remote write outcome remains unknown. A locally accepted receipt stays authoritative throughout.
+Imports are immutable snapshots. Report page IDs anchor idempotency, and an edited revision appears as an explicit review conflict. The Action Register preserves an immutable ownership event for each transfer, alongside a stable row for current ownership. Relay never rewrites external operator edits. A definite failure can be retried. An uncertain create queries for the same key and waits for reconciliation before any additional create. This favors preventing duplicates over automatic recovery when a remote write outcome remains unknown. A locally accepted receipt stays authoritative throughout.
 
 This integration uses bearer authentication and the Notion **2026-03-11** REST contract. A database contains data sources, data-source queries paginate page rows, and page creation uses a data-source parent. The workspace uses title, rich text, date, checkbox, number, and URL properties. Report content lives in the Report property so block traversal is unnecessary. HTTP requests have bounded retries and observe short `Retry-After` values. [Data-source query](https://developers.notion.com/reference/query-a-data-source) · [Capabilities](https://developers.notion.com/reference/capabilities) · [Request limits](https://developers.notion.com/reference/request-limits)
 
@@ -105,3 +105,19 @@ The dedicated demo page contains **Shift Reports**, **Action Register**, and **H
 The official simulator displayed both Notion evidence excerpts and recorded human review. Explicit acceptance transferred one action and left one outstanding. With an intentionally invalid Notion credential, publication stayed pending and the local receipt remained authoritative. Restoring the credential published one receipt and one ownership event. Retrying returned the existing publication records, and a fresh Notion query confirmed one of each. The simulator displayed the synced receipt when reopened.
 
 The local `artifacts/phase4/` directory holds screenshots and machine-readable execution and verification records. The workspace records are synthetic and scoped to the connected demo page.
+
+## Repeatable startup
+
+From the repository root, run `bash scripts/demo.sh offline` for deterministic data and no provider calls, or `bash scripts/demo.sh live` after provisioning the dedicated Notion workspace. Both start FastAPI on loopback and print the exact Vite and simulator commands. Live mode verifies the presence of the server-side configuration, seeds missing synthetic reports, and leaves import, analysis, review, and publication explicit. Every run gets a fresh SQLite directory and preserves previous directories and remote records. Set `RELAY_PORT` to avoid a port collision.
+
+The Action Register now keeps one current-ownership row keyed by `action:<action ID>` and separate immutable receipt/action audit rows. On a subsequent authorized transfer Relay updates that same row only if its remote edit revision and managed fields match the prior successful publication. Conflicts remain pending for operator review. Notion's page-update endpoint offers no documented conditional-write token, so a concurrent edit between read and PATCH is still possible. Treat the demo as single-writer and retain the local receipt as authority. [Notion update endpoint](https://developers.notion.com/reference/patch-page)
+
+## Inspect execution
+
+The JSON server logs join requests via request ID and join business stages via report, finding, shift, handover, and receipt IDs. Analysis reports extraction, proposal and validation timings, token usage and standard-rate estimate when available, retries, validation rejections, and cache reuse. Import and publication emit stage duration and outcomes. Review and acceptance emit identifiers and outcomes without source text. These traces serve local diagnosis without external telemetry.
+
+The configured analysis limits cover report count, input bytes per stage, output tokens per stage, total elapsed time, and bounded retries. Reports are capped at 4,000 characters. The cache keys on relevant inputs, model, prompts, budget, and provider attempt limit. The wearable reads stored findings. Local receipt verification and deterministic review remain available after provider failures.
+
+## Shared deployment boundary
+
+The hackathon demo is suitable for trusted local synthetic use. Leave the current identity-by-ID write API on loopback. A shared deployment needs authenticated operators, per-record and workspace authorization, HTTPS, a real secret store, durable operational controls for Notion conflicts, and an explicit CORS origin and Even Hub network allowlist for the paired-phone WebView. Keep provider credentials and operational report contents out of client code and diagnostic logs. Model output remains a review proposal and has no write tools. Physical G2 packaging and networking require device validation.

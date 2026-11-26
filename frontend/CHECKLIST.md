@@ -18,10 +18,12 @@ Submission is due November 29, 2026 at 20:59 WAT. Budget is $10 and approximatel
 - [x] Connect the wearable queue, source evidence and confirmation screens to the API. Verify the seeded shift, persistent receipt, stale preview and offline recovery in the official simulator.
 - [x] Accept the Phase 2 wearable flow and rerun the full Phase 2 verification.
 - [x] Generate structured Gemini proposals, validate source evidence, and record human review in the simulator. Verify deterministic fallback.
-- [ ] Independently review Phase 3 and its live evaluation before starting further integrations.
+- [x] Independently review and accept Phase 3 and its live evaluation.
 - [x] Verify live Notion import, Gemini evidence, simulator review and handover, write-back, and duplicate-free retry after an authentication failure.
-- [ ] Independently review the Phase 4 walkthrough.
-- [ ] Run frontend and backend checks in GitHub Actions. Record the simulator workflow and prepare submission materials.
+- [x] Accept the Phase 4 walkthrough subject to the Phase 5 verification.
+- [x] Run locked frontend and backend checks in GitHub Actions.
+- [x] Verify a stable Notion action row, preserve its audit history, and exercise publication recovery.
+- [ ] Independently review Phase 5, confirm the official submission rules, and prepare submission materials.
 
 ## P1 · After the core demo works
 
