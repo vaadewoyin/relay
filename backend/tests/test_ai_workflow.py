@@ -248,3 +248,13 @@ def test_unchanged_notion_batch_reuses_successful_execution(store):
     assert repeated.reused_from == initial.id and repeated.id != initial.id
     assert repeated.usage.input_tokens is None
     assert len(provider.calls) == 2
+
+    revised_provider = FakeProvider(
+        (
+            Extraction(facts=(), actions=(), observations=(), ambiguities=()),
+            ProposalBatch(proposals=(), abstention=initial.abstention),
+        )
+    )
+    revised = run(store, revised_provider, budget=AnalysisBudget(seconds=20))
+    assert revised.reused_from is None
+    assert len(revised_provider.calls) == 2
