@@ -7,6 +7,13 @@ export const findingTitles: Record<Finding['type'], string> = {
   stale_version: 'Stale record',
   unresolved_responsibility: 'Unresolved responsibility',
   contradictory_asset_status: 'Conflicting asset status',
+  semantic_contradiction: 'Conflicting reports',
+  unsupported_completion: 'Unverified completion',
+  ambiguous_ownership: 'Ambiguous ownership',
+  missing_operational_context: 'Missing context',
+  unresolved_safety_concern: 'Open safety concern',
+  inconsistent_completion: 'Conflicting completion',
+  potential_duplicate_incident: 'Possible duplicate incident',
 }
 
 const severityOrder = { high: 0, warning: 1, info: 2 }
@@ -44,7 +51,9 @@ export function clip(text: string, width = 42): string {
 }
 
 export function display(title: string, body: string[], hint: string): string {
-  return [title, ...body, '', hint].join('\n')
+  // Ten text lines exceed the framebuffer and hand scrolling over to the SDK.
+  const spacer = body.length <= 6 ? [''] : []
+  return [title, ...body, ...spacer, hint].join('\n')
 }
 
 export function menu(choices: string[], cursor: number): string[] {
@@ -53,8 +62,8 @@ export function menu(choices: string[], cursor: number): string[] {
 
 export type EvidencePage = { heading: string; source: string; status: string; lines: string[] }
 
-export function evidencePages(source: SourceReport, index: number, count: number): EvidencePage[] {
-  const lines = wrapText(source.text)
+export function evidencePages(source: SourceReport, index: number, count: number, quote: string): EvidencePage[] {
+  const lines = wrapText(quote)
   const pageCount = Math.ceil(lines.length / 4)
   return Array.from({ length: pageCount }, (_, page) => ({
     heading: `Source ${index + 1}/${count}${pageCount > 1 ? ` | ${page + 1}/${pageCount}` : ''}`,

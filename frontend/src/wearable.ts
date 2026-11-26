@@ -232,10 +232,10 @@ export class Wearable {
       for (const [index, reference] of references.entries()) {
         const { report } = await this.api.report(reference.report_id)
         if (report.id !== reference.report_id || report.source_ref !== reference.source_ref
-          || report.text !== reference.quote) {
+          || !report.text.includes(reference.quote)) {
           throw new ApiError('invalid_response', 'Evidence does not match the source report.')
         }
-        pages.push(...evidencePages(report, index, references.length))
+        pages.push(...evidencePages(report, index, references.length, reference.quote))
       }
       await this.show({ kind: 'evidence', pages, cursor: 0, back: detail })
     }, 'Checking source evidence...', detail)
@@ -431,17 +431,19 @@ export class Wearable {
         const pending = this.findings.filter(finding => finding.review_status === 'pending')
         const high = pending.filter(finding => finding.severity === 'high').length
         const warning = pending.filter(finding => finding.severity === 'warning').length
+        const ai = pending.filter(finding => finding.origin === 'ai').length
         return display('Relay | Shift brief', [
           clip(this.context?.shiftLabel ?? 'Incoming shift'),
           clip(this.context?.incomingName ?? ''),
           `${pending.length} awaiting review: ${high} high, ${warning} warning`,
+          ...(ai ? [`${ai} AI proposal${ai === 1 ? '' : 's'} awaiting review`] : []),
           ...menu(['Finding queue', this.receiptId ? 'Handover receipt' : 'Handover', 'Refresh'], screen.cursor),
         ], 'Scroll: Move | Tap: Open | Double tap: Exit')
       }
       case 'queue': {
         const start = Math.floor(screen.cursor / queueSize) * queueSize
         const rows = this.findings.slice(start, start + queueSize)
-          .map(finding => `${finding.severity.toUpperCase()} ${findingTitles[finding.type]}${finding.review_status === 'pending' ? '' : ' [reviewed]'}`)
+          .map(finding => `${finding.origin === 'ai' ? 'AI ' : ''}${finding.severity.toUpperCase()} ${findingTitles[finding.type]}${finding.review_status === 'pending' ? '' : ' [reviewed]'}`)
         return display(`Finding queue${rows.length ? ` | ${screen.cursor + 1}/${this.findings.length}` : ''}`,
           rows.length ? menu(rows, screen.cursor - start) : ['No findings for review.'],
           rows.length ? 'Scroll: Move | Tap: Open | Double tap: Back' : 'Double tap: Back')
@@ -449,7 +451,9 @@ export class Wearable {
       case 'detail':
         return display(findingTitles[screen.finding.type], [
           `${screen.finding.severity.toUpperCase()} | Review: ${screen.finding.review_status}`,
-          ...wrapText(screen.finding.explanation).slice(0, 3),
+          `${screen.finding.origin === 'ai' ? 'AI proposal' : 'Deterministic finding'}${screen.finding.review_status === 'confirmed' ? ' | Human confirmed' : ''}`,
+          ...(screen.finding.uncertainty ? ['Uncertainty: ' + clip(screen.finding.uncertainty, 32)] : []),
+          ...wrapText(screen.finding.explanation).slice(0, screen.finding.uncertainty ? 2 : 3),
           ...menu(screen.finding.review_status === 'pending' ? ['Source evidence', 'Review finding'] : ['Source evidence'], screen.cursor),
         ], 'Scroll: Move | Tap: Open | Double tap: Back')
       case 'evidence': {
@@ -461,7 +465,7 @@ export class Wearable {
         return display('Review finding', [
           findingTitles[screen.detail.finding.type],
           'Choose the review to record.',
-          ...menu(['Cancel', 'Acknowledge finding', 'Dismiss finding'], screen.cursor),
+          ...menu(['Cancel', 'Acknowledge finding', screen.detail.finding.origin === 'ai' ? 'Reject AI proposal' : 'Dismiss finding'], screen.cursor),
         ], 'Scroll: Choose | Tap: Select | Double tap: Back')
       case 'preview': {
         const { actions } = screen.handover

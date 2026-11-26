@@ -30,13 +30,18 @@ const evidence = record({ report_id: id, source_ref: text, quote: text })
 const finding = record({
   id,
   type: oneOf('missing_owner', 'overdue_action', 'duplicate_report', 'stale_version',
-    'unresolved_responsibility', 'contradictory_asset_status'),
+    'unresolved_responsibility', 'contradictory_asset_status', 'semantic_contradiction',
+    'unsupported_completion', 'ambiguous_ownership', 'missing_operational_context',
+    'unresolved_safety_concern', 'inconsistent_completion', 'potential_duplicate_incident'),
   severity: oneOf('info', 'warning', 'high'),
   explanation: text,
   evidence: list(evidence, 1),
   recommended_action: text,
   review_status: oneOf('pending', 'confirmed', 'dismissed'),
   created_at: timestamp,
+  origin: oneOf('deterministic', 'ai'),
+  execution_id: nullable(id),
+  uncertainty: nullable(text),
 })
 const actionFields = {
   report_id: id,

@@ -301,3 +301,29 @@ test('local transfer journal is scoped and recovers exactly the original command
   reopened.write()
   assert.equal(reopened.read(), undefined)
 })
+
+test('an AI proposal shows exact report excerpts and retains its origin after human review', async () => {
+  const ai = {
+    ...high, id: 'ai', origin: 'ai', type: 'semantic_contradiction',
+    uncertainty: 'Timing should be confirmed.',
+    evidence: [{ ...high.evidence[0], quote: 'Pump P-17 tripped twice under load.' }],
+  }
+  const { app, frame, go } = harness({
+    findings: async () => [ai, warning], finding: async () => ai,
+  })
+  await app.start()
+  assert.match(frame(), /1 AI proposal awaiting review/)
+  await go('tap')
+  assert.match(frame(), /AI HIGH Conflicting reports/)
+  await go('tap')
+  assert.match(frame(), /AI proposal/)
+  assert.match(frame(), /Uncertainty: Timing/)
+  assert.ok(frame().split('\n').length <= 9)
+  await go('tap')
+  assert.match(frame(), /Pump P-17 tripped twice under load/)
+  assert.doesNotMatch(frame(), /bypass is active/)
+  await go('back', 'down', 'tap')
+  assert.match(frame(), /Reject AI proposal/)
+  await go('down', 'tap')
+  assert.match(frame(), /AI proposal \| Human confirmed/)
+})
