@@ -26,7 +26,7 @@ timing. Keep explanations short and suitable for a human handover.
 """.strip()
 
 EXTRACTION = Prompt(
-    "extract-v1",
+    "extract-v2",
     SOURCE_BOUNDARY
     + """
 
@@ -34,6 +34,9 @@ Extract explicit facts, natural-language asset observations, and reported action
 For asset observations record the time context stated in the report, or null.
 For actions use a known linked action ID only when the report supports the match,
 otherwise null. Distinguish requested, in progress, reported complete, and unclear.
+Treat asset_id and report timestamps as indexing metadata. Establish what the speaker
+actually refers to and when from the text. A pronoun or unspecified unit stays unresolved
+unless the report resolves it. Separate direct observations, hearsay and inferred risks.
 Each item must cite an exact operational quote. Capture ambiguity without resolving
 it by guessing. Return empty arrays when the text is insufficient. Limit extraction
 to the most relevant handover material. Do not infer integrity findings in this step.
@@ -41,11 +44,18 @@ to the most relevant handover material. Do not infer integrity findings in this 
 )
 
 PROPOSALS = Prompt(
-    "semantic-review-v1",
+    "semantic-review-v2",
     SOURCE_BOUNDARY
     + """
 
 Use the supplied extracted observations as leads and verify against original reports.
+For a contradiction, first identify the same explicit entity or work item, the same
+time or test, and genuinely incompatible predicates. Index metadata cannot resolve
+missing textual identity or timing. A planned future action and an accepted assignment
+can both be true. A completed transfer with a named role or person is compatible with
+a report from that recipient acknowledging ownership. Missing documentation is an
+information gap unless the text explicitly identifies a required check as incomplete.
+If a required comparison element is missing, abstain from that comparison.
 Propose only material human review items that are supported by the sources:
 - semantic_contradiction: incompatible descriptions of the same asset condition at the
   same time or test. Cite both incompatible claims.
@@ -68,7 +78,9 @@ Prefer the narrowest category. For completion disputes prefer inconsistent_compl
 semantic_contradiction. For observations with different times, condition changes or negation,
 read the actual timeline before deciding. Avoid reproducing deterministic checks for
 overdue actions, missing structured owners, exact duplicates, or structured status fields.
-Each proposal must have the reported asset ID and precise supporting quotes. Describe what
+Each proposal must have the reported asset ID and precise supporting quotes. Include
+the whole relevant assertion when possible, including its subject, negation, time
+and verification or acceptance wording. Describe what
 is documented separately from what is inferred. Record uncertainty explicitly when relevant.
 Use only the review actions and severity values in the schema. High severity requires material
 operational or safety impact. Return an explicit abstention and no proposals when the reports

@@ -36,4 +36,4 @@ def test_untrusted_report_stays_in_data_channel():
     for prompt in (EXTRACTION, PROPOSALS):
         assert injection not in prompt.instructions
         assert "Use no tools" in prompt.instructions
-        assert prompt.version.endswith("-v1")
+        assert prompt.version.endswith("-v2")
