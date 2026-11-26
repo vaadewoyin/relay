@@ -1,0 +1,111 @@
+{
+  "version": "facilities-challenge-v1",
+  "positive": [
+    {
+      "id": "same_gate",
+      "reports": [
+        "At the 16:00 drill gate G-7 stayed locked for the full drill.",
+        "During that same 16:00 drill I observed gate G-7 unlock and remain unlocked."
+      ],
+      "expected": [
+        {
+          "kind": "semantic_contradiction",
+          "evidence": [
+            {
+              "report": 0,
+              "anchor": "stayed locked"
+            },
+            {
+              "report": 1,
+              "anchor": "remain unlocked"
+            }
+          ]
+        }
+      ],
+      "allow_abstention": false
+    },
+    {
+      "id": "owner_declined",
+      "reports": [
+        "Motor alignment is due before restart. Both supervisors explicitly declined ownership and no one accepted the job."
+      ],
+      "expected": [
+        {
+          "kind": "ambiguous_ownership",
+          "evidence": [
+            {
+              "report": 0,
+              "anchor": "no one accepted"
+            }
+          ]
+        }
+      ],
+      "allow_abstention": false
+    },
+    {
+      "id": "unverified_brake",
+      "reports": [
+        "I closed the brake inspection, but the required load test has not been performed."
+      ],
+      "expected": [
+        {
+          "kind": "unsupported_completion",
+          "evidence": [
+            {
+              "report": 0,
+              "anchor": "load test has not been performed"
+            }
+          ]
+        }
+      ],
+      "allow_abstention": false
+    }
+  ],
+  "negative": [
+    {
+      "id": "similar_pumps",
+      "reports": [
+        "I saw the north pump turn off at 13:00.",
+        "Someone said that one was still running, but could not identify the unit."
+      ],
+      "expected": [],
+      "allow_abstention": true
+    },
+    {
+      "id": "state_changes",
+      "reports": [
+        "At 10:00 gate G-7 was unlocked for loading.",
+        "At 11:00 staff locked gate G-7 after loading was complete."
+      ],
+      "expected": [],
+      "allow_abstention": true
+    },
+    {
+      "id": "accepted_work",
+      "reports": [
+        "Night lead Mina accepted the fan inspection at turnover.",
+        "I am Mina, the night lead. I accepted the fan inspection and will do it after rounds."
+      ],
+      "expected": [],
+      "allow_abstention": true
+    },
+    {
+      "id": "brief_summary",
+      "reports": [
+        "The interlock inspection was finished. This is the short turnover summary."
+      ],
+      "expected": [],
+      "allow_abstention": true
+    },
+    {
+      "id": "unverified_hearsay",
+      "reports": [
+        "A caller said a unit stopped but could not identify it or give a time.",
+        "P-18 was running normally during the documented noon check."
+      ],
+      "expected": [],
+      "allow_abstention": true
+    }
+  ],
+  "validation": []
+}
