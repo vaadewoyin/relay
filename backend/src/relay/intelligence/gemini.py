@@ -34,13 +34,24 @@ def classify(exc: errors.APIError) -> FailureCategory:
 
 
 def supported_schema(node: object) -> object:
-    # Gemini implements a JSON Schema subset. Pydantic still checks the full local schema.
+    # Size and closed-object constraints can make Gemini's decoding grammar too complex.
+    # Pydantic still enforces those constraints on every response.
     if isinstance(node, dict):
         return {
             key: supported_schema(value)
             for key, value in node.items()
             if key
-            not in {"pattern", "format", "minLength", "maxLength", "title", "default"}
+            not in {
+                "pattern",
+                "format",
+                "minLength",
+                "maxLength",
+                "minItems",
+                "maxItems",
+                "additionalProperties",
+                "title",
+                "default",
+            }
         }
     if isinstance(node, list):
         return [supported_schema(value) for value in node]

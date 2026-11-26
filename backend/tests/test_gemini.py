@@ -96,3 +96,14 @@ def test_missing_credentials_are_an_explicit_provider_failure():
     with pytest.raises(ProviderFailure) as failure:
         generate(GeminiProvider(None))
     assert failure.value.category == FailureCategory.NOT_CONFIGURED
+
+
+def test_wire_schema_omits_grammar_limits_but_local_contract_remains_strict():
+    from relay.intelligence.gemini import supported_schema
+
+    complete = ProposalBatch.model_json_schema()
+    wire = str(supported_schema(complete))
+    assert "maxItems" in str(complete)
+    assert "maxItems" not in wire
+    assert "additionalProperties" not in wire
+    assert "semantic_contradiction" in wire
