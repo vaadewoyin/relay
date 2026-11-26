@@ -3,7 +3,7 @@ import type { Finding, Handover, PreviewCommand, Receipt, RelayApi, ReviewComman
 import type { ShiftContext } from './shift-context.ts'
 import { memoryJournal } from './transfer-journal.ts'
 import type { PendingTransfer, TransferJournal } from './transfer-journal.ts'
-import { clip, display, evidencePages, findingTitles, menu, orderFindings, wrapText } from './view.ts'
+import { clip, display, evidencePages, excerpt, findingTitles, itemPages, menu, orderFindings, tagline, wrapText } from './view.ts'
 import type { EvidencePage } from './view.ts'
 
 export type Gesture = 'up' | 'down' | 'tap' | 'back'
@@ -21,6 +21,7 @@ type Screen =
   | { kind: 'receipt'; receipt: Receipt; cursor: number }
   | { kind: 'evidence'; pages: EvidencePage[]; cursor: number; back: Detail }
   | { kind: 'review'; detail: Detail; cursor: number }
+  | { kind: 'notes'; detail: Detail; lines: string[]; cursor: number }
   | { kind: 'loading'; message: string }
   | Failure
   | { kind: 'configuration' }
@@ -99,13 +100,14 @@ export class Wearable {
     const lengths = {
       brief: 3,
       queue: this.findings.length,
-      detail: current.kind === 'detail' && current.finding.review_status === 'pending' ? 2 : 1,
+      detail: current.kind === 'detail' && current.finding.review_status === 'pending' ? 3 : 2,
       evidence: current.kind === 'evidence' ? current.pages.length : 0,
       review: 3,
-      preview: current.kind === 'preview' ? current.handover.actions.length : 0,
+      notes: current.kind === 'notes' ? Math.ceil(current.lines.length / 6) : 0,
+      preview: current.kind === 'preview' ? itemPages(current.handover.actions).length : 0,
       confirm: 2,
       receipt: current.kind === 'receipt'
-        ? current.receipt.transferred.length + current.receipt.outstanding.length : 0,
+        ? itemPages([...current.receipt.transferred, ...current.receipt.outstanding]).length : 0,
     }
     const cursor = move(current.cursor, lengths[current.kind], direction)
     if (cursor !== current.cursor) await this.show({ ...current, cursor })
@@ -134,6 +136,7 @@ export class Wearable {
       case 'evidence':
         await this.show(current.back)
         break
+      case 'notes':
       case 'review':
         await this.show(current.detail)
         break
@@ -167,7 +170,22 @@ export class Wearable {
       }
       case 'detail':
         if (current.cursor === 0) await this.openEvidence(current)
-        else await this.show({ kind: 'review', detail: current, cursor: 0 })
+        else if (current.cursor === 1 && current.finding.review_status === 'pending') {
+          await this.show({ kind: 'review', detail: current, cursor: 0 })
+        } else {
+          const finding = current.finding
+          const lines = [
+            ...wrapText(finding.explanation),
+            ...(finding.uncertainty ? wrapText('Uncertainty: ' + finding.uncertainty) : []),
+            ...wrapText('Suggested review: ' + finding.recommended_action),
+          ]
+          await this.show({ kind: 'notes', detail: current, lines, cursor: 0 })
+        }
+        break
+      case 'evidence':
+        if (current.back.finding.review_status === 'pending') {
+          await this.show({ kind: 'review', detail: current.back, cursor: 0 })
+        }
         break
       case 'review':
         if (current.cursor === 0) await this.show(current.detail)
@@ -423,7 +441,7 @@ export class Wearable {
       case 'configuration':
         return display('Relay | Setup needed', ['Configure a Relay backend and shift.'], 'Double tap: Exit')
       case 'loading':
-        return display('Relay', [screen.message], 'Please wait')
+        return display('Relay', [screen.message], '')
       case 'error':
         return display(`Relay | ${screen.title}`, wrapText(screen.message).slice(0, 5),
           screen.back ? 'Tap: Retry | Double tap: Back' : 'Tap: Retry | Double tap: Exit')
@@ -433,11 +451,11 @@ export class Wearable {
         const warning = pending.filter(finding => finding.severity === 'warning').length
         const ai = pending.filter(finding => finding.origin === 'ai').length
         return display('Relay | Shift brief', [
+          tagline,
           clip(this.context?.shiftLabel ?? 'Incoming shift'),
           clip(this.context?.incomingName ?? ''),
           `${pending.length} awaiting review: ${high} high, ${warning} warning`,
-          ...(ai ? [`${ai} AI proposal${ai === 1 ? '' : 's'} awaiting review`] : []),
-          ...menu(['Finding queue', this.receiptId ? 'Handover receipt' : 'Handover', 'Refresh'], screen.cursor),
+          ...menu([ai ? `Finding queue | ${ai} AI` : 'Finding queue', this.receiptId ? 'Handover receipt' : 'Handover', 'Refresh'], screen.cursor),
         ], 'Scroll: Move | Tap: Open | Double tap: Exit')
       }
       case 'queue': {
@@ -453,29 +471,34 @@ export class Wearable {
           `${screen.finding.severity.toUpperCase()} | Review: ${screen.finding.review_status}`,
           `${screen.finding.origin === 'ai' ? 'AI proposal' : 'Deterministic finding'}${screen.finding.review_status === 'confirmed' ? ' | Human confirmed' : ''}`,
           ...(screen.finding.uncertainty ? ['Uncertainty: ' + clip(screen.finding.uncertainty, 32)] : []),
-          ...wrapText(screen.finding.explanation).slice(0, screen.finding.uncertainty ? 2 : 3),
-          ...menu(screen.finding.review_status === 'pending' ? ['Source evidence', 'Review finding'] : ['Source evidence'], screen.cursor),
+          ...excerpt(screen.finding.explanation, screen.finding.uncertainty ? 1 : 2),
+          ...menu(screen.finding.review_status === 'pending' ? ['Source evidence', 'Review finding', 'Finding notes'] : ['Source evidence', 'Finding notes'], screen.cursor),
         ], 'Scroll: Move | Tap: Open | Double tap: Back')
       case 'evidence': {
         const page = screen.pages[screen.cursor]
         return display(page.heading, [page.source, page.status, ...page.lines],
-          'Scroll: Sources/pages | Double tap: Back')
+          screen.back.finding.review_status === 'pending'
+            ? 'Scroll: Compare | Tap: Review | 2x: Back'
+            : 'Scroll: Compare | Double tap: Back')
       }
+      case 'notes':
+        return display(`Finding notes | ${screen.cursor + 1}/${Math.ceil(screen.lines.length / 6)}`,
+          screen.lines.slice(screen.cursor * 6, screen.cursor * 6 + 6),
+          'Scroll: Notes | Double tap: Back')
       case 'review':
         return display('Review finding', [
           findingTitles[screen.detail.finding.type],
-          'Choose the review to record.',
           ...menu(['Cancel', 'Acknowledge finding', screen.detail.finding.origin === 'ai' ? 'Reject AI proposal' : 'Dismiss finding'], screen.cursor),
         ], 'Scroll: Choose | Tap: Select | Double tap: Back')
       case 'preview': {
         const { actions } = screen.handover
         const eligible = actions.filter(item => item.transferable).length
-        const selected = actions[screen.cursor]
+        const selected = itemPages(actions)[screen.cursor]
         return display('Handover preview', [
           clip(this.context?.incomingName ?? 'Incoming operator'),
           `${eligible} eligible | ${actions.length - eligible} stay outgoing`,
-          `${screen.cursor + 1}/${actions.length} | ${selected.transferable ? 'Will transfer' : 'Stays outgoing'}`,
-          ...wrapText(selected.description).slice(0, 3),
+          `${selected.index + 1}/${actions.length} | ${selected.item.transferable ? 'Will transfer' : 'Stays outgoing'}${selected.suffix}`,
+          ...selected.lines,
         ], eligible ? 'Scroll: Items | Tap: Review | Double tap: Back' : 'Scroll: Items | Double tap: Back')
       }
       case 'confirm': {
@@ -484,19 +507,20 @@ export class Wearable {
         return display('Confirm transfer', [
           clip(`Accept as ${this.context?.incomingName ?? 'incoming operator'}`),
           `${eligible} transfer | ${items.length - eligible} stay outgoing`,
-          'You will take responsibility for this work.',
+          'Accepting changes the owner in Relay.',
           ...menu(['Cancel', 'Accept responsibility'], screen.cursor),
         ], 'Scroll: Choose | Tap: Select | Double tap: Back')
       }
       case 'receipt': {
         const { transferred, outstanding, id, notion_sync } = screen.receipt
         const actions = [...transferred, ...outstanding]
+        const selected = itemPages(actions)[screen.cursor]
         return display('Handover receipt | Accepted', [
           `${transferred.length} transferred | ${outstanding.length} outstanding`,
           id,
           ...(notion_sync ? [notion_sync === "synced" ? "Notion: Synced" : notion_sync === "uncertain" ? "Notion: Check pending write" : "Notion: Sync pending"] : []),
-          `${screen.cursor + 1}/${actions.length} | ${screen.cursor < transferred.length ? 'Transferred' : 'Outstanding'}`,
-          ...wrapText(actions[screen.cursor].description).slice(0, 3),
+          `${selected.index + 1}/${actions.length} | ${selected.index < transferred.length ? 'Transferred' : 'Outstanding'}${selected.suffix}`,
+          ...selected.lines,
         ], 'Scroll: Items | Double tap: Back')
       }
     }

@@ -50,6 +50,14 @@ export function clip(text: string, width = 42): string {
   return characters.length > width ? `${characters.slice(0, width - 3).join('')}...` : characters.join('')
 }
 
+export const tagline = 'Nothing gets lost between shifts.'
+
+export function excerpt(text: string, maxLines: number): string[] {
+  const lines = wrapText(text)
+  if (lines.length <= maxLines) return lines
+  return [...lines.slice(0, maxLines - 1), Array.from(lines[maxLines - 1]).slice(0, 39).join('').trimEnd() + '...']
+}
+
 export function display(title: string, body: string[], hint: string): string {
   // Ten text lines exceed the framebuffer and hand scrolling over to the SDK.
   const spacer = body.length <= 6 ? [''] : []
@@ -60,15 +68,30 @@ export function menu(choices: string[], cursor: number): string[] {
   return choices.map((choice, index) => `${index === cursor ? '>' : ' '} ${clip(choice, 40)}`)
 }
 
+export function itemPages<T extends { description: string }>(items: readonly T[]) {
+  return items.flatMap((item, index) => {
+    const lines = wrapText(item.description)
+    const pages = Math.ceil(lines.length / 3)
+    return Array.from({ length: pages }, (_, page) => ({
+      item, index, lines: lines.slice(page * 3, page * 3 + 3),
+      suffix: pages > 1 ? ` | Page ${page + 1}/${pages}` : '',
+    }))
+  })
+}
+
 export type EvidencePage = { heading: string; source: string; status: string; lines: string[] }
 
 export function evidencePages(source: SourceReport, index: number, count: number, quote: string): EvidencePage[] {
   const lines = wrapText(quote)
   const pageCount = Math.ceil(lines.length / 4)
+  const time = source.observed_at ? new Date(source.observed_at).toISOString().slice(11, 16) + ' UTC' : ''
+  const notion = source.source_url && source.source_ref.startsWith('notion:')
+  const reference = notion ? 'Notion | ' + source.source_ref.slice(-8).toUpperCase() : source.source_ref
+  const status = source.asset_status?.replaceAll('_', ' ') ?? 'Report excerpt'
   return Array.from({ length: pageCount }, (_, page) => ({
     heading: `Source ${index + 1}/${count}${pageCount > 1 ? ` | ${page + 1}/${pageCount}` : ''}`,
-    source: clip(source.source_url && source.source_ref.startsWith("notion:") ? "Notion | " + source.source_ref.slice(7) : source.source_ref),
-    status: source.asset_status?.replaceAll('_', ' ') ?? 'No structured status',
+    source: clip(reference),
+    status: time ? `${time} | ${status}` : status,
     lines: lines.slice(page * 4, page * 4 + 4),
   }))
 }

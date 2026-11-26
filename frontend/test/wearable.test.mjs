@@ -312,7 +312,7 @@ test('an AI proposal shows exact report excerpts and retains its origin after hu
     findings: async () => [ai, warning], finding: async () => ai,
   })
   await app.start()
-  assert.match(frame(), /1 AI proposal awaiting review/)
+  assert.match(frame(), /Finding queue \| 1 AI/)
   await go('tap')
   assert.match(frame(), /AI HIGH Conflicting reports/)
   await go('tap')
@@ -322,7 +322,8 @@ test('an AI proposal shows exact report excerpts and retains its origin after hu
   await go('tap')
   assert.match(frame(), /Pump P-17 tripped twice under load/)
   assert.doesNotMatch(frame(), /bypass is active/)
-  await go('back', 'down', 'tap')
+  await go('tap')
+  assert.match(frame(), /> Cancel/)
   assert.match(frame(), /Reject AI proposal/)
   await go('down', 'tap')
   assert.match(frame(), /AI proposal \| Human confirmed/)
@@ -342,4 +343,21 @@ test('the local accepted receipt remains visible while external Notion sync is p
   state = 'synced'
   await go('back', 'down', 'tap')
   assert.match(frame(), /Notion: Synced/)
+})
+
+test('long evidence context stays readable in paginated finding notes', async () => {
+  const long = {
+    ...high,
+    explanation: 'Inspect the pump seal and compare the operator entries. '.repeat(5) + 'Check the final pressure log.',
+    recommended_action: 'Call the maintenance lead.',
+  }
+  const { app, frame, go } = harness({ findings: async () => [long], finding: async () => long })
+  await app.start()
+  await go('tap', 'tap')
+  assert.match(frame(), /\.\.\./)
+  await go('down', 'down', 'tap')
+  assert.match(frame(), /Finding notes \| 1\/2/)
+  await go('down')
+  assert.match(frame(), /final pressure log/)
+  assert.match(frame(), /maintenance\s+lead/)
 })
