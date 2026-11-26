@@ -103,7 +103,10 @@ class GeminiProvider(ModelProvider):
             except ProviderFailure as exc:
                 if exc.category not in RETRYABLE or attempt + 1 == self.attempts:
                     raise ProviderFailure(
-                        exc.category, retries=attempt, usage=exc.usage
+                        exc.category,
+                        retries=attempt,
+                        usage=exc.usage,
+                        http_status=exc.http_status,
                     ) from None
                 await asyncio.sleep(
                     min(0.2 * (attempt + 1), max(0, deadline - monotonic()))
@@ -144,7 +147,10 @@ class GeminiProvider(ModelProvider):
                     ),
                 )
         except errors.APIError as exc:
-            raise ProviderFailure(classify(exc)) from None
+            raise ProviderFailure(
+                classify(exc),
+                http_status=exc.code if isinstance(exc.code, int) else None,
+            ) from None
         except httpx.TimeoutException:
             raise ProviderFailure(FailureCategory.TIMEOUT) from None
         except httpx.TransportError:

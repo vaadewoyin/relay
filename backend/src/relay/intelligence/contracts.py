@@ -150,6 +150,8 @@ class Execution(Record):
     finding_ids: tuple[UUID, ...] = ()
     abstention: Uncertainty | None = None
     failure: FailureCategory | None = None
+    failure_stage: str | None = None
+    provider_http_status: int | None = None
     stage_latency_ms: dict[str, Count] = Field(default_factory=dict)
     source_fingerprint: str | None = None
     reused_from: UUID | None = None

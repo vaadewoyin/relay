@@ -80,6 +80,7 @@ def test_gemini_structured_response_and_bounded_retry(monkeypatch):
     ("reply", "category"),
     [
         (lambda: errors.ClientError(403, {}), FailureCategory.UNAUTHORIZED),
+        (lambda: errors.ClientError(400, {}), FailureCategory.INVALID_REQUEST),
         (lambda: response("bad json"), FailureCategory.MALFORMED_OUTPUT),
         (lambda: None, FailureCategory.TIMEOUT),
     ],
@@ -89,6 +90,10 @@ def test_gemini_failure_categories(monkeypatch, reply, category):
     with pytest.raises(ProviderFailure) as failure:
         generate(GeminiProvider("synthetic-key"), timeout=0.08)
     assert failure.value.category == category
+    assert failure.value.http_status == {
+        FailureCategory.UNAUTHORIZED: 403,
+        FailureCategory.INVALID_REQUEST: 400,
+    }.get(category)
     assert len(calls) == 1
 
 

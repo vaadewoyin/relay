@@ -64,13 +64,16 @@ class Analyzer:
         rejection_codes: Counter[str] = Counter()
         stages: dict[str, int] = {}
         failure = None
+        failure_stage = None
+        provider_http_status = None
         abstention = None
         grounded = ()
 
         async def generate[T: Contract](
             prompt: Prompt, data: str, schema: type[T]
         ) -> T:
-            nonlocal usage, retries
+            nonlocal usage, retries, failure_stage
+            failure_stage = prompt.version
             if len(data.encode()) > self.budget.input_bytes:
                 raise ProviderFailure(FailureCategory.BUDGET)
             remaining = self.budget.seconds - (monotonic() - start)
@@ -132,6 +135,7 @@ class Analyzer:
                 abstention = candidates.abstention
         except ProviderFailure as error:
             failure = error.category
+            provider_http_status = error.http_status
         except TimeoutError:
             failure = FailureCategory.TIMEOUT
 
@@ -155,6 +159,8 @@ class Analyzer:
             retry_count=retries,
             abstention=abstention,
             failure=failure,
+            failure_stage=failure_stage if failure else None,
+            provider_http_status=provider_http_status,
             stage_latency_ms=stages,
         )
         return Analysis(execution, grounded)
