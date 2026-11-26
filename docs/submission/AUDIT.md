@@ -1,0 +1,13 @@
+# Judging audit
+
+Use the supplied official rubric. The opening and core demonstration prioritize the combined 55% for G2 usefulness and read/write.
+
+| Criterion | Strength and evidence | Remaining weakness | How the video proves it |
+| --- | --- | --- | --- |
+| **Usefulness on G2 · 30%** | At the pump, an incoming operator can glance at the high-priority contradiction, compare two short originals, and act from the wearable. The simulator captured the brief, queue, and deliberate confirmation. | The use case is synthetic. Wearability and worksite ergonomics remain untested on hardware. | Frame the arrival at the loading dock, then make the short on-glasses decision the main event. Keep the evidence readable and show the gestures in order. |
+| **Read and write · 25%** | Real Notion report import, original citations, explicit ownership transfer, persistent receipt, synced status, and authorized update of the canonical Action Register row. | Publication is a separate synchronization step in this demo. Conflicting external edits can leave it pending. | Show both Notion source rows, then show the exact same action row after the update and the separately published receipt. |
+| **Technical execution · 20%** | Gemini structured proposals, local citation validation, transactional acceptance, durable receipt, and retry-safe synchronization. Locked CI exercises backend, frontend, and packaging. | The synthetic benchmark had ten incomplete runs initially. Exact citations establish provenance and still need human interpretation. | Show the proposal origin, briefly reveal pending versus synced states, and use a short evidence-backed verification caption. |
+| **UX for display and voice · 15%** | Prioritized queue, short paginated evidence, and distinct review and transfer dialogs with Cancel selected by default. Phase 6 tested recovery and receipt reopening. | Voice is deferred. Physical G2 readability and capture remain unverified. | Keep the official simulator label visible. Hold each excerpt and the Cancel default long enough to understand. |
+| **Business potential and safety · 10%** | Facilities and hospitality shift teams already use shared records. Relay limits authority to explicit operator acceptance, and leaves an audit trail of transferred and outstanding work. | No customer pilot or outcome data. The local demo uses synthetic identity and trusted loopback. | Show why a verified owner matters on the next shift, then close on one accountable action and the actual receipt. |
+
+The audit found no submission-blocking defect that warrants changing the frozen application. The recording and authorization to publish are the remaining gates.
