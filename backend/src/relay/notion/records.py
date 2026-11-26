@@ -12,6 +12,8 @@ class Publication(Record):
     state: SyncStatus
     remote_id: UUID | None = None
     updated_at: AwareDatetime
+    remote_revision: str | None = None
+    remote_fingerprint: str | None = None
     failure: str | None = None
 
 

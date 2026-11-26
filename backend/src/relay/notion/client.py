@@ -40,6 +40,7 @@ class Sources:
 class NotionAdapter(Protocol):
     def verify(self, source: UUID) -> None: ...
     def pages(self, source: UUID, key: str | None = None) -> Iterator[JSON]: ...
+    def update(self, page: UUID, properties: JSON) -> JSON: ...
     def create(self, source: UUID, properties: JSON) -> JSON: ...
 
 
@@ -137,4 +138,10 @@ class NotionClient:
                 "properties": properties,
             },
             create=True,
+        )
+
+    def update(self, page: UUID, properties: JSON) -> JSON:
+        # Re-read the page before retrying an ambiguous write.
+        return self.request(
+            "PATCH", f"pages/{page}", {"properties": properties}, create=True
         )

@@ -89,13 +89,36 @@ class FakeAdapter:
         elif (source, key) in self.rows:
             yield self.rows[source, key]
 
+    def _row(self, page, properties):
+        return {
+            "id": page,
+            "last_edited_time": str(uuid4()),
+            "properties": {
+                name: {
+                    key: [{"plain_text": part["text"]["content"]} for part in value]
+                    if key in ("title", "rich_text")
+                    else value
+                }
+                for name, prop in properties.items()
+                for key, value in prop.items()
+            },
+        }
+
+    def update(self, page, properties):
+        key = next(key for key, row in self.rows.items() if row["id"] == str(page))
+        updated = self._row(str(page), properties)
+        self.rows[key] = updated
+        if self.failure == "timeout":
+            raise NotionError("timeout", possibly_created=True)
+        return updated
+
     def create(self, source, properties):
         self.calls += 1
         failure = self.failure
         if failure == "forbidden":
             raise NotionError(failure)
         key = properties["Relay ID"]["rich_text"][0]["text"]["content"]
-        row = {"id": str(uuid4())}
+        row = self._row(str(uuid4()), properties)
         self.rows[source, key] = row
         if failure == "timeout":
             raise NotionError(failure, possibly_created=True)
@@ -144,7 +167,7 @@ def test_import_external_edit_and_publication_keep_local_authority(tmp_path):
     remote.failure = "timeout"
     assert all(item.state == "uncertain" for item in sync.publish(receipt))
     assert sync.status(receipt) == "uncertain"
-    assert len(remote.rows) == 2
+    assert len(remote.rows) == 3
     calls = remote.calls
     restarted = NotionSync(remote, sync.sources, SQLiteStore(store.path))
     remote.failure = None
@@ -152,4 +175,78 @@ def test_import_external_edit_and_publication_keep_local_authority(tmp_path):
     assert restarted.status(receipt) == "synced"
     assert remote.calls == calls
     assert restarted.publish(receipt) == restarted.publish(receipt)
-    assert len(remote.rows) == 2
+    assert len(remote.rows) == 3
+
+
+def test_authoritative_update_guard_and_restart_reconciliation(tmp_path):
+    from datetime import timedelta
+
+    from relay.domain import HandoverReceipt, Shift
+
+    store = SQLiteStore(tmp_path / "relay.sqlite3")
+    seed(store)
+    following = Shift(
+        id=uuid4(),
+        operator_id=OUTGOING.id,
+        starts_at=EVENING.ends_at,
+        ends_at=EVENING.ends_at + timedelta(hours=8),
+    )
+    with store.transaction(write=True) as tx:
+        tx.insert(following)
+    remote = FakeAdapter([report_page()])
+    sync = NotionSync(remote, Sources(uuid4(), uuid4(), uuid4()), store)
+    (report_id,) = sync.pull().report_ids
+    service = RelayService(store, clock=lambda: at(15))
+
+    def transfer(outgoing, incoming):
+        preview = service.preview(
+            PreviewHandover(
+                operation_id=uuid4(),
+                actor_id=outgoing.operator_id,
+                outgoing_shift_id=outgoing.id,
+                incoming_shift_id=incoming.id,
+            )
+        )
+        return service.accept(
+            preview.id,
+            AcceptHandover(
+                operation_id=uuid4(),
+                actor_id=incoming.operator_id,
+                expected_version=preview.version,
+                confirmed=True,
+            ),
+        )
+
+    first = transfer(DAY, EVENING)
+    assert all(row.state == "synced" for row in sync.publish(first))
+    action_id = service.report(report_id).actions[0].id
+    key = (sync.sources.actions, f"action:{action_id}")
+    page = remote.rows[key]["id"]
+    second = transfer(EVENING, following)
+    # An edit in the same revision must still be caught by the managed-field checksum.
+    owner = remote.rows[key]["properties"]["Owner"]["rich_text"][0]
+    original = owner["plain_text"]
+    owner["plain_text"] = "Changed externally"
+    assert sync.publish(second)[-1].failure == "external_edit_requires_review"
+    assert (
+        remote.rows[key]["properties"]["Owner"]["rich_text"][0]["plain_text"]
+        == "Changed externally"
+    )
+    owner["plain_text"] = original
+
+    remote.failure = "timeout"
+    assert sync.publish(second)[-1].state == "uncertain"
+    assert remote.rows[key]["id"] == page
+    remote.failure = None
+    restarted = NotionSync(remote, sync.sources, SQLiteStore(store.path))
+    assert restarted.publish(second)[-1].state == "synced"
+    assert restarted.status(first) == "synced"
+    assert len(remote.rows) == 5
+    stale = first.model_copy(update={"id": uuid4()})
+    with store.transaction(write=True) as tx:
+        tx.insert(HandoverReceipt.model_validate(stale.model_dump()))
+    assert restarted.publish(stale)[-1].failure == "stale_action_version"
+    assert (
+        remote.rows[key]["properties"]["Version"]["number"]
+        == second.transferred[0].version
+    )

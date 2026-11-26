@@ -1,12 +1,20 @@
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from hashlib import sha256
+from json import dumps
 from threading import Lock
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from pydantic import ValidationError
 
-from relay.domain import Conflict, HandoverReceipt, OperationalReport, Operator
+from relay.domain import (
+    ActionItem,
+    Conflict,
+    HandoverReceipt,
+    OperationalReport,
+    Operator,
+)
 from relay.notion.client import JSON, NotionAdapter, NotionError, Sources
 from relay.notion.mapping import map_report, rich_text
 from relay.notion.records import ImportResult, Publication, SyncStatus
@@ -18,10 +26,16 @@ class Effect:
     source: UUID
     key: str
     properties: JSON
+    current_action: ActionItem | None = None
+    receipt_id: UUID | None = None
 
     @property
     def id(self) -> UUID:
-        return uuid5(NAMESPACE_URL, f"relay:notion:{self.source}:{self.key}")
+        return uuid5(
+            NAMESPACE_URL,
+            f"relay:notion:{self.source}:{self.key}"
+            + (f":{self.receipt_id}" if self.current_action else ""),
+        )
 
 
 class NotionSync:
@@ -96,7 +110,7 @@ class NotionSync:
             reports = {report.id: report for report in tx.all(OperationalReport)}
         for item in receipt.transferred:
             report = reports[item.report_id]
-            yield Effect(
+            event = Effect(
                 self.sources.actions,
                 f"{receipt.id}:{item.id}",
                 {
@@ -111,6 +125,15 @@ class NotionSync:
                         "url": str(report.source_url) if report.source_url else None
                     },
                 },
+            )
+
+            yield event
+            yield Effect(
+                self.sources.actions,
+                f"action:{item.id}",
+                event.properties,
+                current_action=item,
+                receipt_id=receipt.id,
             )
 
     def status(self, receipt: HandoverReceipt) -> SyncStatus:
@@ -135,11 +158,15 @@ class NotionSync:
         *,
         remote_id: UUID | None = None,
         failure: str | None = None,
+        remote_revision: str | None = None,
+        remote_fingerprint: str | None = None,
     ) -> Publication:
         record = Publication(
             id=effect.id,
             state=state,
             remote_id=remote_id,
+            remote_revision=remote_revision,
+            remote_fingerprint=remote_fingerprint,
             failure=failure,
             updated_at=datetime.now(UTC),
         )
@@ -156,6 +183,8 @@ class NotionSync:
         if previous and previous.state == "synced":
             return previous
         uncertain = bool(previous and previous.state == "uncertain")
+        if effect.current_action is not None:
+            return self._publish_current(effect, uncertain)
         try:
             matches = list(self.adapter.pages(effect.source, effect.key))
             if len(matches) > 1:
@@ -195,3 +224,98 @@ class NotionSync:
             )
         except (KeyError, ValueError):
             return self._write(effect, "uncertain", failure="invalid_remote_record")
+
+    def _publish_current(self, effect: Effect, uncertain: bool) -> Publication:
+        item = effect.current_action
+        assert item is not None
+        with self.store.transaction() as tx:
+            current = require(tx, ActionItem, item.id)
+            if current.version != item.version or current.owner_id != item.owner_id:
+                stale = True
+            else:
+                stale = False
+            published = tx.all(Publication)
+        if stale:
+            return self._stale(effect)
+        properties = {
+            **effect.properties,
+            "Relay ID": rich_text(effect.key),
+            "Sync Status": rich_text("Synced"),
+        }
+
+        def fingerprint(values: dict, *, remote: bool) -> str:
+            normalized = {}
+            for name, spec in properties.items():
+                kind = next(iter(spec))
+                value = values[name][kind]
+                if kind in {"rich_text", "title"}:
+                    value = "".join(
+                        part["plain_text"] if remote else part["text"]["content"]
+                        for part in value
+                    )
+                normalized[name] = value
+            return sha256(dumps(normalized, sort_keys=True).encode()).hexdigest()
+
+        expected = fingerprint(properties, remote=False)
+
+        def verified(row: JSON) -> Publication:
+            revision = row["last_edited_time"]
+            if (
+                not isinstance(revision, str)
+                or fingerprint(row["properties"], remote=True) != expected
+            ):
+                raise ValueError("invalid revision")
+            return self._write(
+                effect,
+                "synced",
+                remote_id=UUID(str(row["id"])),
+                remote_revision=revision,
+                remote_fingerprint=expected,
+            )
+
+        try:
+            matches = list(self.adapter.pages(effect.source, effect.key))
+            if len(matches) > 1:
+                return self._write(effect, "uncertain", failure="duplicate_remote_key")
+            if not matches:
+                if uncertain:
+                    return self._write(
+                        effect, "uncertain", failure="awaiting_remote_reconciliation"
+                    )
+                self._write(effect, "uncertain")
+                return verified(self.adapter.create(effect.source, properties))
+            row = matches[0]
+            page = UUID(str(row["id"]))
+            remote_properties = row["properties"]
+            if not isinstance(remote_properties, dict):
+                raise ValueError("invalid properties")
+
+            observed = fingerprint(remote_properties, remote=True)
+            if observed == expected:
+                return verified(row)
+            # Only update the exact revision Relay previously published.
+            if not any(
+                record.remote_id == page
+                and record.remote_revision == row["last_edited_time"]
+                and record.remote_fingerprint == observed
+                and record.state == "synced"
+                for record in published
+            ):
+                return self._write(
+                    effect, "pending", failure="external_edit_requires_review"
+                )
+            if remote_properties["Version"]["number"] >= item.version:
+                return self._stale(effect)
+            self._write(effect, "uncertain")
+            return verified(self.adapter.update(page, properties))
+        except NotionError as exc:
+            return self._write(
+                effect,
+                "uncertain" if uncertain or exc.possibly_created else "pending",
+                failure=exc.code,
+            )
+        except (KeyError, TypeError, ValueError):
+            return self._write(effect, "uncertain", failure="invalid_remote_record")
+
+    def _stale(self, effect: Effect) -> Publication:
+        return self._write(effect, "pending", failure="stale_action_version")
