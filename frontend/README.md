@@ -2,26 +2,54 @@
 
 Nothing gets lost between shifts.
 
-Relay is a wearable shift-handover system for facilities and hospitality maintenance teams using Even G2. Phase 0 is a TypeScript and Vite smoke app built on the official [Even Hub minimal starter](https://github.com/even-realities/evenhub-templates/tree/8cb01354f5ee914c5fab97d06e6d13b28eeb5815/minimal). See [DESIGN.md](DESIGN.md) and the [implementation checklist](CHECKLIST.md).
+Relay is a wearable shift-handover system for facilities and hospitality maintenance teams using Even G2. Follow the [design](DESIGN.md) and [implementation checklist](CHECKLIST.md).
 
-## Run locally
+## Run the synthetic simulator demo
 
-Use Node.js 22.12 or later in the 22.x line and npm. The lockfile installs the official SDK, CLI and simulator locally.
+Use Python 3.12, uv, Node.js 22.12 or later in the 22.x line, and npm. On WSL2, the official Linux simulator needs WSLg and WebKitGTK 4.1. On Ubuntu, the runtime package is `libwebkit2gtk-4.1-0`.
+
+From `backend/`:
+
+```bash
+uv sync --locked
+mkdir -p ../artifacts
+export RELAY_DB_PATH="$(mktemp -d)/relay.sqlite3"
+uv run --locked python -m relay.demo prepare-wearable > ../artifacts/wearable-context.json
+uv run --locked python -m relay.api
+```
+
+The fixture creates the directory and reports while leaving review and acceptance pending. Keep the backend running. From `frontend/` in a second terminal:
 
 ```bash
 npm ci
-npm run dev -- --host 127.0.0.1 --strictPort
+VITE_RELAY_CONTEXT="$(cat ../artifacts/wearable-context.json)" npm run dev -- --strictPort
 ```
 
-Run the simulator in another terminal. On Ubuntu 24.04 under WSL2, a working WSLg session and WebKitGTK 4.1 runtime are required. If launch reports a missing `libwebkit2gtk-4.1.so.0`, install `libwebkit2gtk-4.1-0` with apt and retry.
+Launch the simulator from `frontend/` in a third terminal:
 
 ```bash
 npm run simulate -- --automation-port 9898
 ```
 
-The glasses view should show **Hello, Relay**. Click once to display **Taps: 1**, send up and down to verify the count stays at one, then double-click to open the exit flow. The simulator automation API exposes `GET /api/ping`, `GET /api/screenshot/glasses` and `POST /api/input` on `http://127.0.0.1:9898`. Input actions are `click`, `up`, `down` and `double_click`.
+The default Vite proxy forwards `/relay-api` to FastAPI at `http://127.0.0.1:8000`. For a different backend port, set `RELAY_PROXY_TARGET` when starting Vite. When using a different Vite port, pass its URL to the simulator directly. The shift context contains synthetic IDs and display labels that can be read in the frontend bundle.
 
-## Check and package
+### Walkthrough
+
+1. From **Shift brief**, tap **Finding queue**, then tap the first high-severity **Overdue action**. Tap **Source evidence** to read the original report.
+2. Double tap to return to the finding. Scroll to **Review finding**, tap to open it, then scroll to **Acknowledge finding** and tap to record it.
+3. Double tap twice to return to the brief. Scroll to **Handover**, tap, and scroll through eligible and outstanding work.
+4. Tap the preview to open **Confirm transfer**. The selection starts at **Cancel**. Scroll to **Accept responsibility**, then tap. Relay displays the receipt after fetching it back from FastAPI.
+5. Scroll the receipt to see outstanding work. Return to the brief and choose **Handover receipt** to fetch it again. You can also inspect the ID at `GET /handover-receipts/{receipt_id}` in [Swagger UI](http://127.0.0.1:8000/docs).
+
+Scroll moves the selection or page. Single tap activates the selection. Double tap goes back, or requests SDK exit from the brief. On a stale preview, retry opens a fresh preview and requires a fresh confirmation. After a connection failure, tap **Retry** once the server returns. If a previous disposable database has left a saved receipt pointer, opening that unavailable receipt offers recovery. A different Vite origin also isolates the simulator's local transfer state.
+
+The simulator automation API exposes `GET /api/ping`, `GET /api/screenshot/glasses`, and `POST /api/input` at `http://127.0.0.1:9898`. The input actions are `click`, `up`, `down`, and `double_click`. Save the screenshot endpoint as a PNG and view it against a dark background to see the transparent framebuffer.
+
+## Simulator and physical networking
+
+In the simulator, the companion WebView opens Vite and uses its same-origin development proxy. The FastAPI server can stay bound to loopback. In a packaged app, the paired phone hosts the WebView and its loopback refers to the phone. A physical deployment needs a phone-reachable HTTPS API configured through `VITE_RELAY_API_BASE`, an appropriate Even Hub network allowlist in `app.json`, and API CORS settings for the actual companion WebView origin. The current package has no deployment URL or network allowlist. Treat it as a packaging check. The local demo trusts actor IDs from its synthetic context and must stay on trusted loopback. A shared deployment needs authenticated actors and per-record access controls.
+
+## Checks and packaging
 
 ```bash
 npm test
@@ -29,7 +57,7 @@ npm run build
 npm run pack
 ```
 
-The Node smoke test runs the real app entry point with a mocked SDK bridge. The package command produces `out.ehpk`. Keep `--sdk-ver` and `app.json` aligned with the SDK version in the lockfile so the packer derives the correct minimum companion app version.
+The tests cover the API client, navigation and transfer recovery. The SDK entry test uses a mocked bridge. Packaging produces `out.ehpk` with relative asset URLs. Keep `--sdk-ver` and `app.json` aligned with the SDK version in the lockfile so the packer derives the correct companion app minimum.
 
 ## Official development skills
 
