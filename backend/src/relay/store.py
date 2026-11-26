@@ -17,6 +17,7 @@ from relay.domain import (
     Shift,
 )
 from relay.intelligence.contracts import Execution
+from relay.notion.records import Publication
 
 # SQL identifiers come exclusively from this mapping.
 TABLES: dict[type[Record], str] = {
@@ -30,6 +31,7 @@ TABLES: dict[type[Record], str] = {
     Handover: "handovers",
     HandoverReceipt: "receipts",
     Execution: "ai_executions",
+    Publication: "notion_publications",
 }
 
 
@@ -90,7 +92,7 @@ class SQLiteStore:
             connection.execute("PRAGMA journal_mode = WAL")
             connection.execute("BEGIN IMMEDIATE")
             version = connection.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2):
+            if version not in (0, 1, 2, 3):
                 raise RuntimeError(
                     f"Unsupported Relay database schema version {version}."
                 )
@@ -109,8 +111,12 @@ class SQLiteStore:
                 connection.execute(
                     "CREATE TABLE ai_executions (id TEXT PRIMARY KEY, payload TEXT NOT NULL)"
                 )
-            if version < 2:
-                connection.execute("PRAGMA user_version = 2")
+            if version in (1, 2):
+                connection.execute(
+                    "CREATE TABLE IF NOT EXISTS notion_publications (id TEXT PRIMARY KEY, payload TEXT NOT NULL)"
+                )
+            if version < 3:
+                connection.execute("PRAGMA user_version = 3")
 
     @contextmanager
     def transaction(self, *, write: bool = False) -> Iterator[SQLiteSession]:
