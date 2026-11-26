@@ -13,3 +13,19 @@ bash scripts/demo.sh offline
 Follow the printed Vite and simulator commands. The deterministic mode uses synthetic reports and an isolated SQLite database. For the live Notion and Gemini workflow, follow the [workspace setup](backend/README.md) and run `bash scripts/demo.sh live`. Keep the API on loopback and use a dedicated synthetic workspace.
 
 See the [architecture](frontend/DESIGN.md), [evaluation history](backend/evals/results-v2.md), and [submission checklist](SUBMISSION.md).
+
+## Demonstration and architecture
+
+![Relay mark](frontend/public/relay-mark.png)
+
+**Nothing gets lost between shifts.** See the [recording walkthrough](docs/DEMO.md) and [wearable UX audit](docs/WEARABLE.md).
+
+```mermaid
+flowchart LR
+    Notion[Notion demo workspace] <-->|Import and publish| API[Loopback FastAPI]
+    API <-->|Reports, reviews, receipts| DB[(SQLite)]
+    API -->|Untrusted report data| Gemini[Gemini]
+    Gemini -->|Candidate for local validation| API
+    Web[Even Hub WebView] <-->|Vite local proxy| API
+    Web <-->|Even Hub SDK| G2[Official G2 simulator]
+```
