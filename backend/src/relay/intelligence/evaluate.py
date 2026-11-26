@@ -19,9 +19,9 @@ from relay.intelligence.contracts import (
     FailureCategory,
     ProposalBatch,
     ProposedFinding,
-    Usage,
 )
-from relay.intelligence.gemini import DEFAULT_MODEL, GeminiProvider
+from relay.intelligence.cost import estimate_cost
+from relay.intelligence.gemini import GeminiProvider
 from relay.intelligence.prompts import Sources
 from relay.intelligence.validation import EvidenceValidator, GroundedProposal
 
@@ -77,19 +77,6 @@ class Suite(BaseModel):
 
 def rating(numerator: int, denominator: int) -> float | None:
     return round(numerator / denominator, 4) if denominator else None
-
-
-def estimate_cost(model: str, usage: Usage) -> float | None:
-    # Published standard Gemini Developer API USD rates per million text tokens.
-    # An estimate uses only observed usage and excludes retries without token metadata.
-    if (
-        model != DEFAULT_MODEL
-        or usage.input_tokens is None
-        or usage.output_tokens is None
-    ):
-        return None
-    output = usage.output_tokens + (usage.thinking_tokens or 0)
-    return round((usage.input_tokens * 0.25 + output * 1.50) / 1_000_000, 7)
 
 
 def matches(
@@ -170,6 +157,7 @@ def aggregate(rows: list[dict]) -> dict:
     true_positives = sum(row["matched"] for row in successes)
     observed = sum(len(row["observed"]) for row in successes)
     expected = sum(len(row["expected"]) for row in successes)
+    expected_attempted = sum(len(row["expected"]) for row in rows)
     proposals = sum(row["execution"]["proposal_count"] for row in successes)
     rejected = sum(row["execution"]["rejected_proposal_count"] for row in successes)
     latencies = [row["execution"]["latency_ms"] for row in successes]
@@ -187,10 +175,15 @@ def aggregate(rows: list[dict]) -> dict:
         "expected_findings": expected,
         "precision": rating(true_positives, observed),
         "recall": rating(true_positives, expected),
+        "attempted_expected_findings": expected_attempted,
+        "end_to_end_recall": rating(true_positives, expected_attempted),
+        "failed_cases": len(rows) - len(successes),
         "negative_cases": len(negative),
         "false_positive_rate": rating(
             sum(bool(row["observed"]) for row in negative), len(negative)
         ),
+        "emitted_candidates": proposals,
+        "rejected_candidates": rejected,
         "evidence_validity": rating(proposals - rejected, proposals),
         "schema_validity_per_case": rating(len(successes), len(successes) + malformed),
         "negative_abstention_rate": rating(
@@ -206,7 +199,9 @@ def aggregate(rows: list[dict]) -> dict:
     }
 
 
-async def live_cases(suite: Suite, limit: int, pause: float) -> list[dict]:
+async def live_cases(
+    suite: Suite, limit: int, pause: float, offset: int = 0
+) -> list[dict]:
     provider = GeminiProvider.from_environment()
     analyzer = Analyzer(provider, AnalysisBudget.from_environment())
     cases = [
@@ -215,7 +210,7 @@ async def live_cases(suite: Suite, limit: int, pause: float) -> list[dict]:
         if case
     ]
     rows: list[dict] = []
-    for index, case in enumerate(cases[:limit]):
+    for index, case in enumerate(cases[offset : offset + limit]):
         if index:
             await asyncio.sleep(pause)
         sources = case.sources()
@@ -253,14 +248,24 @@ def main() -> None:
     parser.add_argument(
         "--pause", type=float, default=1.5, help="Seconds between live cases."
     )
+    parser.add_argument(
+        "--offset", type=int, default=0, help="Skip previously attempted cases."
+    )
     args = parser.parse_args()
-    if args.limit < 1 or args.pause < 0:
-        parser.error("Limit must be positive and pause must be non-negative.")
+    if args.limit < 1 or args.pause < 0 or args.offset < 0:
+        parser.error(
+            "Limit must be positive, and pause and offset must be non-negative."
+        )
     suite = Suite.model_validate_json(args.dataset.read_text())
-    rows = asyncio.run(live_cases(suite, args.limit, args.pause)) if args.live else []
+    rows = (
+        asyncio.run(live_cases(suite, args.limit, args.pause, args.offset))
+        if args.live
+        else []
+    )
     report = {
         "dataset": suite.version,
         "live": args.live,
+        "offset": args.offset,
         "dataset_cases": len(suite.positive)
         + len(suite.negative)
         + len(suite.validation),
@@ -273,6 +278,8 @@ def main() -> None:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report["metrics"], indent=2))
+    if not all(row["passed"] for row in report["deterministic_validation"]):
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
