@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
 from typing import Annotated, Literal
+from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
 import uvicorn
@@ -95,6 +96,22 @@ def log_event(event: str, **fields: object) -> None:
     )
 
 
+def browser_write_allowed(request: Request) -> bool:
+    origin = request.headers.get("origin")
+    if request.method not in {"POST", "PUT", "PATCH", "DELETE"} or origin is None:
+        return True
+    try:
+        url = urlsplit(origin)
+        return (
+            url.scheme in {"http", "https"}
+            and url.hostname in {"localhost", "127.0.0.1", "::1"}
+            and url.username is None
+            and not (url.path or url.query or url.fragment)
+        )
+    except ValueError:
+        return False
+
+
 def create_app(
     db_path: Path | None = None,
     *,
@@ -157,7 +174,12 @@ def create_app(
         request.state.request_id = str(uuid4())
         started = perf_counter()
         try:
-            response = await call_next(request)
+            if browser_write_allowed(request):
+                response = await call_next(request)
+            else:
+                response = error(
+                    request, 403, "forbidden_origin", "Use the local Relay interface."
+                )
         except Exception as exc:
             logger.error(
                 json.dumps(

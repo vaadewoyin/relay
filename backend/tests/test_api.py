@@ -367,3 +367,19 @@ def test_wearable_fixture_leaves_reviewer_and_receiver_actions_pending(tmp_path:
     with sqlite3.connect(path) as connection:
         assert connection.execute("SELECT COUNT(*) FROM reports").fetchone()[0] == 3
         assert connection.execute("SELECT COUNT(*) FROM receipts").fetchone()[0] == 0
+
+
+def test_remote_browser_origins_cannot_mutate_loopback_api(client: TestClient):
+    body = reports()[0].model_dump(mode="json")
+    for origin in (
+        "https://outside.example",
+        "null",
+        "http://localhost@outside.example",
+    ):
+        response = client.post("/reports", json=body, headers={"Origin": origin})
+        assert response.status_code == 403
+        assert response.json()["code"] == "forbidden_origin"
+    local = client.post(
+        "/reports", json=body, headers={"Origin": "http://127.0.0.1:5173"}
+    )
+    assert local.status_code == 201
