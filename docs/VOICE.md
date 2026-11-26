@@ -1,0 +1,7 @@
+# Voice feasibility gate
+
+Even Hub supports explicit microphone activation and audio delivery through `onEvenHubEvent`. The developer guidance describes `audioEvent.audioPcm` as signed little-endian 16-bit mono PCM at 16 kHz. Use `g2-microphone` for glasses capture or `phone-microphone` when using a compatible SDK with phone capture. Relay's locked web SDK 0.0.10 types expose `audioControl(isOpen: boolean)`. Newer microphone source arguments require a separately verified SDK upgrade. [Even Hub developer videos](https://hub.evenrealities.com/docs/learn/videos) · [Official PCM reference](https://hub.evenrealities.com/docs/enterprise/evenhub)
+
+The installed Linux simulator's `--list-audio-input-devices` command exposed only `alsa:null`, a silence input. The host showed WSLg audio sources, but the simulator did not list a usable microphone. There was no live speech input, transcription, or physical microphone verification in this run.
+
+A later pilot can send a brief, explicitly activated clip to a controlled transcription backend, such as Gemini audio transcription or an approved local speech recognizer. It should stop capture immediately, avoid retaining raw audio, treat the transcript as untrusted, and require an operator to confirm a validated report before persistence. Voice activation should have no path to handover acceptance. The submission flow stays gesture-based and requests no microphone permission. [Gemini audio guide](https://ai.google.dev/gemini-api/docs/audio)

@@ -16,3 +16,15 @@ The DoraHacks organizer listing confirms the build week of November 23–29, onl
 ## Demo sequence
 
 Show the Notion source, the AI finding and cited evidence, human review, explicit acceptance, and the synced receipt and current owner. Use the [local demo procedure](backend/README.md). Show the retry result if time permits.
+
+## Details to retrieve manually from DoraHacks
+
+Open the event page and its submission form after signing in if prompted. Save the text or screenshots of:
+
+1. The exact cutoff with timezone and the required submission fields and links.
+2. The **AI Assistants & Work** rules, including whether Notion synthetic write-back is eligible, whether a named integration or API feedback is mandatory, and any limits on production or synthetic data.
+3. Whether simulator-only video is eligible, maximum video length and hosting requirements, any mandatory `.ehpk` upload, and any publicly reachable deployment requirement.
+4. When the repository must be public, which code hosts are accepted, and any licensing or visibility exceptions.
+5. The official judging criteria, weights, and any disqualification or team eligibility rules.
+
+The organizer announcement confirms the build-week window and online submission. The Phase 6 official URL check again returned HTTP 405. The checklist above uses corroboration for planning until the form and rules are reviewed manually.
