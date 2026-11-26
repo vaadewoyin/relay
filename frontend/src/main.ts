@@ -6,6 +6,7 @@ import {
 } from '@evenrealities/even_hub_sdk'
 import { RelayApi } from './api.ts'
 import { parseShiftContext } from './shift-context.ts'
+import { localJournal } from './transfer-journal.ts'
 import { Wearable } from './wearable.ts'
 
 const bridge = await waitForEvenAppBridge()
@@ -25,9 +26,11 @@ if (result !== 0) throw new Error(`Could not create glasses page (${result}).`)
 
 const env = import.meta.env
 const base = env?.VITE_RELAY_API_BASE || (env?.DEV ? '/relay-api' : undefined)
+const context = base ? parseShiftContext(env?.VITE_RELAY_CONTEXT) : undefined
 const wearable = new Wearable({
   api: new RelayApi(base ?? '/relay-api'),
-  context: base ? parseShiftContext(env?.VITE_RELAY_CONTEXT) : undefined,
+  context,
+  journal: base && context ? localJournal(() => localStorage, base, context) : undefined,
   async draw(content) {
     const updated = await bridge.textContainerUpgrade(new TextContainerUpgrade({
       containerID, containerName, content, contentOffset: 0, contentLength: 0,

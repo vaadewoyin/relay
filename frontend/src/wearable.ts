@@ -1,6 +1,8 @@
 import { ApiError } from './api.ts'
-import type { Finding, Handover, PreviewCommand, RelayApi, ReviewCommand } from './api.ts'
+import type { Finding, Handover, PreviewCommand, Receipt, RelayApi, ReviewCommand } from './api.ts'
 import type { ShiftContext } from './shift-context.ts'
+import { memoryJournal } from './transfer-journal.ts'
+import type { PendingTransfer, TransferJournal } from './transfer-journal.ts'
 import { clip, display, evidencePages, findingTitles, menu, orderFindings, wrapText } from './view.ts'
 import type { EvidencePage } from './view.ts'
 
@@ -10,12 +12,17 @@ type Brief = { kind: 'brief'; cursor: number }
 type Queue = { kind: 'queue'; cursor: number }
 type Detail = { kind: 'detail'; finding: Finding; cursor: number; queueIndex: number }
 type Preview = { kind: 'preview'; handover: Handover; cursor: number }
+type Failure = {
+  kind: 'error'; title: string; message: string; retry: () => Promise<void>; back?: Screen
+}
 type Screen =
   | Brief | Queue | Detail | Preview
+  | { kind: 'confirm'; preview: Preview; cursor: number }
+  | { kind: 'receipt'; receipt: Receipt; cursor: number }
   | { kind: 'evidence'; pages: EvidencePage[]; cursor: number; back: Detail }
   | { kind: 'review'; detail: Detail; cursor: number }
   | { kind: 'loading'; message: string }
-  | { kind: 'error'; title: string; message: string; retry: () => Promise<void>; back?: Screen }
+  | Failure
   | { kind: 'configuration' }
 
 const queueSize = 4
@@ -30,10 +37,13 @@ export class Wearable {
   private readonly exit: () => Promise<void>
   private readonly clock: () => number
   private readonly operationId: () => string
+  private readonly journal: TransferJournal
   private screen: Screen = { kind: 'loading', message: 'Connecting to Relay...' }
   private findings: Finding[] = []
+  private findingsLoaded = false
   private busy = false
   private lastTap = -Infinity
+  private receiptId?: string
 
   constructor(options: {
     api: RelayApi
@@ -42,6 +52,7 @@ export class Wearable {
     exit: () => Promise<void>
     clock?: () => number
     operationId?: () => string
+    journal?: TransferJournal
   }) {
     this.api = options.api
     this.context = options.context
@@ -49,12 +60,14 @@ export class Wearable {
     this.exit = options.exit
     this.clock = options.clock ?? (() => performance.now())
     this.operationId = options.operationId ?? (() => crypto.randomUUID())
+    this.journal = options.journal ?? memoryJournal()
   }
 
   async start() {
     this.busy = true
     try {
-      await (this.context ? this.refresh() : this.show({ kind: 'configuration' }))
+      if (!this.context) await this.show({ kind: 'configuration' })
+      else await this.resume()
     } finally {
       this.busy = false
     }
@@ -90,6 +103,9 @@ export class Wearable {
       evidence: current.kind === 'evidence' ? current.pages.length : 0,
       review: 3,
       preview: current.kind === 'preview' ? current.handover.actions.length : 0,
+      confirm: 2,
+      receipt: current.kind === 'receipt'
+        ? current.receipt.transferred.length + current.receipt.outstanding.length : 0,
     }
     const cursor = move(current.cursor, lengths[current.kind], direction)
     if (cursor !== current.cursor) await this.show({ ...current, cursor })
@@ -104,6 +120,13 @@ export class Wearable {
       case 'queue':
       case 'preview':
         await this.show(brief())
+        break
+      case 'receipt':
+        if (this.findingsLoaded) await this.show(brief())
+        else await this.refresh()
+        break
+      case 'confirm':
+        await this.show(current.preview)
         break
       case 'detail':
         await this.show({ kind: 'queue', cursor: current.queueIndex })
@@ -125,7 +148,10 @@ export class Wearable {
     switch (current.kind) {
       case 'brief':
         if (current.cursor === 0) await this.show({ kind: 'queue', cursor: 0 })
-        else if (current.cursor === 1) await this.openPreview()
+        else if (current.cursor === 1) {
+          if (this.receiptId) await this.openReceipt(this.receiptId)
+          else await this.openPreview()
+        }
         else await this.refresh(current)
         break
       case 'queue': {
@@ -147,16 +173,54 @@ export class Wearable {
         if (current.cursor === 0) await this.show(current.detail)
         else await this.review(current.detail, current.cursor === 1 ? 'confirmed' : 'dismissed')
         break
+      case 'preview':
+        if (current.handover.actions.some(item => item.transferable)) {
+          await this.show({ kind: 'confirm', preview: current, cursor: 0 })
+        }
+        break
+      case 'confirm':
+        if (current.cursor === 0) await this.show(current.preview)
+        else if (this.context) {
+          await this.submitTransfer({
+            kind: 'pending', handoverId: current.preview.handover.id,
+            command: {
+              operation_id: this.operationId(), actor_id: this.context.incomingOperatorId,
+              expected_version: current.preview.handover.version, confirmed: true,
+            },
+          })
+        }
+        break
       case 'error':
         await current.retry()
         break
     }
   }
 
+  private async resume() {
+    let entry
+    try {
+      entry = this.journal.read()
+    } catch {
+      await this.show({
+        kind: 'error', title: 'Transfer state unavailable',
+        message: 'Relay cannot check saved transfer state. Restore local storage before continuing.',
+        retry: () => this.resume(),
+      })
+      return
+    }
+    if (entry?.kind === 'pending') {
+      await this.show(this.unverifiedTransfer(entry, 'Transfer status unknown'))
+      return
+    }
+    this.receiptId = entry?.receiptId
+    await this.refresh()
+  }
+
   private async refresh(back?: Screen) {
     await this.request(async () => {
       await this.api.health()
       this.findings = orderFindings(await this.api.findings())
+      this.findingsLoaded = true
       await this.show(brief())
     }, 'Connecting to Relay...', back)
   }
@@ -198,6 +262,100 @@ export class Wearable {
     }, 'Preparing handover...', brief())
   }
 
+  private unverifiedTransfer(entry: PendingTransfer, title: string): Failure {
+    return {
+      kind: 'error', title,
+      message: 'No receipt verified. Retry the same confirmed transfer.',
+      retry: () => this.submitTransfer(entry),
+    }
+  }
+
+  private async submitTransfer(entry: PendingTransfer) {
+    const rejectedCodes = ['stale_version', 'handover_already_accepted', 'no_transferable_actions',
+      'not_found', 'forbidden', 'invalid_operation', 'operation_id_reused']
+    await this.request(async () => {
+      try {
+        this.journal.write(entry)
+      } catch {
+        throw new ApiError('storage', 'Could not save the transfer for safe retry.')
+      }
+      let accepted: Receipt
+      try {
+        accepted = await this.api.accept(entry.handoverId, entry.command)
+      } catch (error) {
+        if (error instanceof ApiError && rejectedCodes.includes(error.code)) this.journal.write()
+        throw error
+      }
+      if (accepted.handover_id !== entry.handoverId) {
+        throw new ApiError('invalid_response', 'Receipt is for a different handover.')
+      }
+      let receipt: Receipt
+      try {
+        receipt = await this.fetchReceipt(accepted.id, entry.handoverId)
+      } catch {
+        throw new ApiError('receipt_unverified', 'Could not read the stored receipt.')
+      }
+      this.journal.write({ kind: 'receipt', receiptId: receipt.id })
+      this.receiptId = receipt.id
+      await this.show({ kind: 'receipt', receipt, cursor: 0 })
+    }, 'Verifying transfer receipt...', undefined, (error) => {
+      if (error.code === 'stale_version') {
+        return {
+          title: 'Preview changed', message: 'Transfer rejected. Open and review a fresh preview.',
+          retry: () => this.openPreview(), back: brief(),
+        }
+      }
+      if (rejectedCodes.includes(error.code)) {
+        return {
+          title: 'Transfer rejected', message: error.message,
+          retry: () => this.refresh(brief()), back: brief(),
+        }
+      }
+      if (error.code === 'storage') {
+        return {
+          title: 'Transfer storage unavailable', message: error.message,
+          retry: () => this.submitTransfer(entry),
+        }
+      }
+      return this.unverifiedTransfer(entry, 'Transfer status unknown')
+    })
+  }
+
+  private async fetchReceipt(id: string, handoverId?: string): Promise<Receipt> {
+    const receipt = await this.api.receipt(id)
+    if (receipt.id !== id || (handoverId && receipt.handover_id !== handoverId)
+      || receipt.accepted_by !== this.context?.incomingOperatorId
+      || receipt.incoming_shift_id !== this.context.incomingShiftId
+      || receipt.outgoing_shift_id !== this.context.outgoingShiftId) {
+      throw new ApiError('invalid_response', 'Receipt does not match this shift transfer.')
+    }
+    return receipt
+  }
+
+  private async openReceipt(id: string) {
+    await this.request(async () => {
+      const receipt = await this.fetchReceipt(id)
+      await this.show({ kind: 'receipt', receipt, cursor: 0 })
+    }, 'Loading stored receipt...', brief(), (error) => {
+      if (error.code === 'not_found') {
+        try {
+          this.journal.write()
+        } catch {
+          return {
+            title: 'Transfer storage unavailable',
+            message: 'Restore local storage to refresh the saved receipt.',
+            retry: () => this.openReceipt(id), back: brief(),
+          }
+        }
+        this.receiptId = undefined
+        return {
+          title: 'Receipt unavailable', message: 'The current backend has no record of this receipt.',
+          retry: () => this.refresh(brief()), back: brief(),
+        }
+      }
+    })
+  }
+
   private async review(detail: Detail, outcome: ReviewCommand['outcome']) {
     const context = this.context
     if (!context) return
@@ -234,7 +392,7 @@ export class Wearable {
 
   private async request(
     load: () => Promise<void>, message: string, back?: Screen,
-    recovery?: (error: ApiError) => Omit<Extract<Screen, { kind: 'error' }>, 'kind'> | undefined,
+    recovery?: (error: ApiError) => Omit<Failure, 'kind'> | undefined,
   ) {
     await this.show({ kind: 'loading', message })
     try {
@@ -247,7 +405,7 @@ export class Wearable {
         kind: 'error',
         ...(recovered ?? {
           title: offline ? 'Backend unavailable' : 'Unable to continue',
-          message: failure.message,
+          message: failure.code === 'unavailable' ? 'Check the Relay server, then retry.' : failure.message,
           retry: () => this.request(load, message, back, recovery),
           back,
         }),
@@ -277,7 +435,7 @@ export class Wearable {
           clip(this.context?.shiftLabel ?? 'Incoming shift'),
           clip(this.context?.incomingName ?? ''),
           `${pending.length} awaiting review: ${high} high, ${warning} warning`,
-          ...menu(['Finding queue', 'Handover', 'Refresh'], screen.cursor),
+          ...menu(['Finding queue', this.receiptId ? 'Handover receipt' : 'Handover', 'Refresh'], screen.cursor),
         ], 'Scroll: Move | Tap: Open | Double tap: Exit')
       }
       case 'queue': {
@@ -314,7 +472,27 @@ export class Wearable {
           `${eligible} eligible | ${actions.length - eligible} stay outgoing`,
           `${screen.cursor + 1}/${actions.length} | ${selected.transferable ? 'Will transfer' : 'Stays outgoing'}`,
           ...wrapText(selected.description).slice(0, 3),
-        ], 'Scroll: Work items | Double tap: Back')
+        ], eligible ? 'Scroll: Items | Tap: Review | Double tap: Back' : 'Scroll: Items | Double tap: Back')
+      }
+      case 'confirm': {
+        const items = screen.preview.handover.actions
+        const eligible = items.filter(item => item.transferable).length
+        return display('Confirm transfer', [
+          clip(`Accept as ${this.context?.incomingName ?? 'incoming operator'}`),
+          `${eligible} transfer | ${items.length - eligible} stay outgoing`,
+          'You will take responsibility for this work.',
+          ...menu(['Cancel', 'Accept responsibility'], screen.cursor),
+        ], 'Scroll: Choose | Tap: Select | Double tap: Back')
+      }
+      case 'receipt': {
+        const { transferred, outstanding, id } = screen.receipt
+        const actions = [...transferred, ...outstanding]
+        return display('Handover receipt | Accepted', [
+          `${transferred.length} transferred | ${outstanding.length} outstanding`,
+          id,
+          `${screen.cursor + 1}/${actions.length} | ${screen.cursor < transferred.length ? 'Transferred' : 'Outstanding'}`,
+          ...wrapText(actions[screen.cursor].description).slice(0, 3),
+        ], 'Scroll: Items | Double tap: Back')
       }
     }
   }
