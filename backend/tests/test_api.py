@@ -350,3 +350,20 @@ def test_new_work_invalidates_preview_and_supplies_stale_evidence(client: TestCl
     }
     current = check(client.get(f"/actions/{owned_action(original)['id']}"), 200)
     assert current["owner_id"] == str(OUTGOING.id)
+
+
+def test_wearable_fixture_leaves_reviewer_and_receiver_actions_pending(tmp_path: Path):
+    from relay.demo import prepare_wearable
+
+    path = tmp_path / "wearable.sqlite3"
+    store = SQLiteStore(path)
+    context = prepare_wearable(store)
+    assert prepare_wearable(store) == context
+    assert context["incomingOperatorId"] == str(INCOMING.id)
+    with TestClient(create_app(path)) as client:
+        findings = check(client.get("/findings"), 200)
+        assert len(findings) == 5
+        assert all(finding["review_status"] == "pending" for finding in findings)
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM reports").fetchone()[0] == 3
+        assert connection.execute("SELECT COUNT(*) FROM receipts").fetchone()[0] == 0

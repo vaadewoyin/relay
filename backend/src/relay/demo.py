@@ -10,7 +10,7 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 
 from relay.api import database_path
 from relay.domain import Asset, AssetStatus, Operator, Shift
-from relay.service import NewAction, ReportIntake
+from relay.service import NewAction, RelayService, ReportIntake
 from relay.store import SQLiteStore
 
 
@@ -77,6 +77,22 @@ def reports() -> tuple[ReportIntake, ...]:
         ),
         observation("copied-fault", fault, AssetStatus.FAULTED),
     )
+
+
+def prepare_wearable(store: SQLiteStore) -> dict[str, str]:
+    """Ingest the fixture without reviewing findings or accepting responsibility."""
+    seed(store)
+    service = RelayService(store)
+    for report in reports():
+        service.intake(report)
+    return {
+        "outgoingShiftId": str(DAY.id),
+        "incomingShiftId": str(EVENING.id),
+        "outgoingOperatorId": str(OUTGOING.id),
+        "incomingOperatorId": str(INCOMING.id),
+        "incomingName": INCOMING.name,
+        "shiftLabel": "Evening shift | Synthetic",
+    }
 
 
 def run(base: str) -> dict[str, object]:
@@ -254,12 +270,14 @@ def run(base: str) -> dict[str, object]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("seed", "run"))
+    parser.add_argument("command", choices=("seed", "prepare-wearable", "run"))
     parser.add_argument("--url", default="http://127.0.0.1:8000")
     args = parser.parse_args()
     if args.command == "seed":
         seed(SQLiteStore(database_path()))
         print("Seeded synthetic operators, shifts and asset.")
+    elif args.command == "prepare-wearable":
+        print(json.dumps(prepare_wearable(SQLiteStore(database_path()))))
     else:
         print(json.dumps(run(args.url), indent=2))
 
