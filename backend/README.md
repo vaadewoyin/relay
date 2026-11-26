@@ -97,3 +97,11 @@ Imports are immutable snapshots. Report page IDs anchor idempotency, and an edit
 This integration uses bearer authentication and the Notion **2026-03-11** REST contract. A database contains data sources, data-source queries paginate page rows, and page creation uses a data-source parent. The workspace uses title, rich text, date, checkbox, number, and URL properties. Report content lives in the Report property so block traversal is unnecessary. HTTP requests have bounded retries and observe short `Retry-After` values. [Data-source query](https://developers.notion.com/reference/query-a-data-source) · [Capabilities](https://developers.notion.com/reference/capabilities) · [Request limits](https://developers.notion.com/reference/request-limits)
 
 Use synthetic reports and a trusted single-worker loopback deployment. Restrict production access and store credentials server-side. Preserve human confirmation when publishing outcomes to external systems. [Even Hub developer terms](https://support.evenrealities.com/hc/en-us/articles/15606676690703-Even-Hub-Developer-Platform-Terms-of-Service)
+
+### Live Phase 4 verification
+
+The dedicated demo page contains **Shift Reports**, **Action Register**, and **Handover Receipts**. Relay imported three synthetic rows. The second import returned the same three local report IDs as unchanged. Gemini Flash-Lite with `extract-v2` and `semantic-review-v2` produced an evidence-backed contradiction about pump P-17. A second analysis reused the stored result. The first run took 8.443 seconds and reported 2,802 input and 1,462 output tokens, estimated at $0.00289 at standard rates.
+
+The official simulator displayed both Notion evidence excerpts and recorded human review. Explicit acceptance transferred one action and left one outstanding. With an intentionally invalid Notion credential, publication stayed pending and the local receipt remained authoritative. Restoring the credential published one receipt and one ownership event. Retrying returned the existing publication records, and a fresh Notion query confirmed one of each. The simulator displayed the synced receipt when reopened.
+
+The local `artifacts/phase4/` directory holds screenshots and machine-readable execution and verification records. The workspace records are synthetic and scoped to the connected demo page.
