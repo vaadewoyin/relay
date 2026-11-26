@@ -62,6 +62,7 @@ class Analyzer:
         usage: Usage | None = None
         retries = extracted_rejections = proposal_count = duplicate_count = 0
         rejection_codes: Counter[str] = Counter()
+        stages: dict[str, int] = {}
         failure = None
         abstention = None
         grounded = ()
@@ -75,6 +76,7 @@ class Analyzer:
             remaining = self.budget.seconds - (monotonic() - start)
             if remaining <= 0:
                 raise ProviderFailure(FailureCategory.TIMEOUT)
+            stage_start = monotonic()
             try:
                 async with asyncio.timeout(remaining):
                     result = await self.provider.generate(
@@ -93,6 +95,8 @@ class Analyzer:
                         else error.usage
                     )
                 raise
+            finally:
+                stages[prompt.version] = round((monotonic() - stage_start) * 1000)
             usage = usage.aggregate(result.usage) if usage is not None else result.usage
             retries += result.retry_count
             return result.result
@@ -108,12 +112,20 @@ class Analyzer:
             else:
                 validator = EvidenceValidator(sources)
                 draft = await generate(EXTRACTION, sources.payload(), Extraction)
+                validate_start = monotonic()
                 extracted, extracted_rejections = validator.extraction(draft)
+                stages["extraction_validation"] = round(
+                    (monotonic() - validate_start) * 1000
+                )
                 candidates = await generate(
                     PROPOSALS, sources.payload(extracted), ProposalBatch
                 )
                 proposal_count = len(candidates.proposals)
+                validate_start = monotonic()
                 result = validator.proposals(candidates)
+                stages["proposal_validation"] = round(
+                    (monotonic() - validate_start) * 1000
+                )
                 grounded = result.grounded
                 duplicate_count = result.duplicates
                 rejection_codes.update(str(code) for code in result.rejected)
@@ -143,5 +155,6 @@ class Analyzer:
             retry_count=retries,
             abstention=abstention,
             failure=failure,
+            stage_latency_ms=stages,
         )
         return Analysis(execution, grounded)

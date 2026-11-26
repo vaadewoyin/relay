@@ -17,6 +17,7 @@ from relay.domain import (
 )
 from relay.intelligence.analysis import Analyzer
 from relay.intelligence.contracts import Execution, ReviewAction, Usage
+from relay.intelligence.cost import estimate_cost
 from relay.intelligence.prompts import EXTRACTION, PROPOSALS, Sources
 from relay.intelligence.validation import GroundedProposal
 from relay.service import Store, require
@@ -77,7 +78,18 @@ class Intelligence:
                 report.source_ref.startswith("notion:") and report.source_url
                 for report in reports
             ):
-                fingerprint = sha256(sources.payload().encode()).hexdigest()
+                fingerprint = sha256(
+                    json.dumps(
+                        {
+                            "sources": sources.payload(),
+                            "budget": self.analyzer.budget.model_dump(mode="json"),
+                            "provider_attempts": getattr(
+                                self.analyzer.provider, "attempts", None
+                            ),
+                        },
+                        sort_keys=True,
+                    ).encode()
+                ).hexdigest()
                 with self.store.transaction(write=True) as tx:
                     cached = next(
                         (
@@ -110,6 +122,7 @@ class Intelligence:
                                 "started_at": datetime.now(UTC),
                                 "usage": Usage(),
                                 "retry_count": 0,
+                                "stage_latency_ms": {},
                                 "reused_from": cached.id,
                             }
                         )
@@ -121,6 +134,7 @@ class Intelligence:
                                     "id": str(execution_id),
                                     "request_id": request_id,
                                     "reused_from": str(cached.id),
+                                    "shift_id": str(shift_id),
                                 }
                             )
                         )
@@ -175,6 +189,10 @@ class Intelligence:
                         "event": "ai_execution",
                         **execution.model_dump(mode="json", exclude={"abstention"}),
                         "abstained": execution.abstention is not None,
+                        "source_report_ids": [str(report.id) for report in reports],
+                        "estimated_standard_usd": estimate_cost(
+                            execution.model, execution.usage
+                        ),
                     }
                 )
             )

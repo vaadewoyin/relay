@@ -303,9 +303,19 @@ def create_app(
 
     @app.post("/findings/{finding_id}/reviews", status_code=201)
     def review(
-        finding_id: UUID, command: ReviewFinding, service: Service
+        finding_id: UUID, command: ReviewFinding, service: Service, request: Request
     ) -> ReviewDecision:
-        return service.review(finding_id, command)
+        started = perf_counter()
+        result = service.review(finding_id, command)
+        log_event(
+            "finding_review",
+            request_id=request.state.request_id,
+            finding_id=str(finding_id),
+            review_id=str(result.id),
+            outcome=str(result.outcome),
+            latency_ms=round((perf_counter() - started) * 1000, 2),
+        )
+        return result
 
     @app.get("/reviews/{review_id}")
     def get_review(review_id: UUID, service: Service) -> ReviewDecision:
@@ -321,9 +331,27 @@ def create_app(
 
     @app.post("/handovers/{handover_id}/acceptance", status_code=201)
     def accept(
-        handover_id: UUID, command: AcceptHandover, service: Service
+        handover_id: UUID, command: AcceptHandover, service: Service, request: Request
     ) -> HandoverReceipt:
-        return service.accept(handover_id, command)
+        started = perf_counter()
+        receipt = service.accept(handover_id, command)
+        log_event(
+            "handover_acceptance",
+            request_id=request.state.request_id,
+            receipt_id=str(receipt.id),
+            handover_id=str(handover_id),
+            shift_id=str(receipt.outgoing_shift_id),
+            report_ids=sorted(
+                {
+                    str(item.report_id)
+                    for item in (*receipt.transferred, *receipt.outstanding)
+                }
+            ),
+            transferred=len(receipt.transferred),
+            outstanding=len(receipt.outstanding),
+            latency_ms=round((perf_counter() - started) * 1000, 2),
+        )
+        return receipt
 
     def get_notion(request: Request) -> NotionSync:
         sync = request.app.state.notion
@@ -341,10 +369,21 @@ def create_app(
         return Health()
 
     @app.post("/notion/import")
-    def import_notion(request: Request) -> ImportResult:
+    def import_notion(request: Request, service: Service) -> ImportResult:
+        started = perf_counter()
         result = get_notion(request).pull()
+        ids = set(result.report_ids)
+        findings = [
+            str(item.id)
+            for item in service.findings()
+            if item.origin == "deterministic"
+            and any(ref.report_id in ids for ref in item.evidence)
+        ]
         log_event(
             "notion_import",
+            latency_ms=round((perf_counter() - started) * 1000, 2),
+            deterministic_finding_ids=findings,
+            report_ids=list(map(str, result.report_ids)),
             request_id=request.state.request_id,
             **result.model_dump(exclude={"report_ids", "failures"}),
         )
@@ -354,13 +393,18 @@ def create_app(
     def sync_receipt(
         receipt_id: UUID, service: Service, request: Request
     ) -> tuple[Publication, ...]:
+        started = perf_counter()
         stored = service.get(HandoverReceipt, receipt_id)
         result = get_notion(request).publish(stored)
         log_event(
             "notion_publication",
             request_id=request.state.request_id,
             receipt_id=str(receipt_id),
-            states=[item.state for item in result],
+            effects=[
+                {"id": str(item.id), "state": item.state, "failure": item.failure}
+                for item in result
+            ],
+            latency_ms=round((perf_counter() - started) * 1000, 2),
         )
         return result
 
