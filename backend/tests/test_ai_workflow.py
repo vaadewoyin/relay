@@ -3,7 +3,7 @@ from uuid import uuid4
 
 import pytest
 
-from relay.demo import DAY, INCOMING, OUTGOING, at, prepare_wearable
+from relay.demo import DAY, INCOMING, OUTGOING, PUMP, at, prepare_wearable
 from relay.domain import (
     ActionItem,
     FindingOrigin,
@@ -212,3 +212,39 @@ def test_semantic_fixture_leaves_conflicting_free_text_for_model(store):
         report.asset_status is None for report in semantic
     )
     assert RelayService(store).findings() == baseline
+
+
+def test_unchanged_notion_batch_reuses_successful_execution(store):
+    from relay.intelligence.contracts import Uncertainty
+    from relay.service import ReportIntake
+
+    RelayService(store).intake(
+        ReportIntake(
+            operation_id=uuid4(),
+            source_ref=f"notion:{uuid4()}",
+            source_url="https://www.notion.so/demo",
+            shift_id=DAY.id,
+            author_id=OUTGOING.id,
+            asset_id=PUMP.id,
+            observed_at=at(13),
+            text="Synthetic Notion evidence records a compatible observation.",
+            synthetic=True,
+        )
+    )
+    provider = FakeProvider(
+        (
+            Extraction(facts=(), actions=(), observations=(), ambiguities=()),
+            ProposalBatch(
+                proposals=(),
+                abstention=Uncertainty(
+                    kind="insufficient_evidence",
+                    explanation="The reports do not establish another issue.",
+                ),
+            ),
+        )
+    )
+    initial = run(store, provider)
+    repeated = run(store, provider)
+    assert repeated.reused_from == initial.id and repeated.id != initial.id
+    assert repeated.usage.input_tokens is None
+    assert len(provider.calls) == 2

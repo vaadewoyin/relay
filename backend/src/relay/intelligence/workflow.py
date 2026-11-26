@@ -1,6 +1,8 @@
 import asyncio
 import json
 import logging
+from datetime import UTC, datetime
+from hashlib import sha256
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from relay.domain import (
@@ -14,8 +16,8 @@ from relay.domain import (
     Shift,
 )
 from relay.intelligence.analysis import Analyzer
-from relay.intelligence.contracts import Execution, ReviewAction
-from relay.intelligence.prompts import Sources
+from relay.intelligence.contracts import Execution, ReviewAction, Usage
+from relay.intelligence.prompts import EXTRACTION, PROPOSALS, Sources
 from relay.intelligence.validation import GroundedProposal
 from relay.service import Store, require
 
@@ -69,8 +71,62 @@ class Intelligence:
                 actions = tuple(
                     action for action in tx.all(ActionItem) if action.report_id in ids
                 )
+            sources = Sources(reports, actions)
+            fingerprint = None
+            if any(
+                report.source_ref.startswith("notion:") and report.source_url
+                for report in reports
+            ):
+                fingerprint = sha256(sources.payload().encode()).hexdigest()
+                with self.store.transaction(write=True) as tx:
+                    cached = next(
+                        (
+                            item
+                            for item in tx.all(Execution)
+                            if item.shift_id == shift_id
+                            and item.source_fingerprint == fingerprint
+                            and item.model == self.analyzer.provider.model
+                            and item.extraction_prompt_version == EXTRACTION.version
+                            and item.proposal_prompt_version == PROPOSALS.version
+                            and item.failure is None
+                            and (item.finding_ids or item.abstention)
+                            and item.reused_from is None
+                        ),
+                        None,
+                    )
+                    if cached is not None:
+                        if previous := tx.get(Execution, execution_id):
+                            if previous.shift_id != shift_id:
+                                raise Conflict(
+                                    "operation_id_reused",
+                                    "Analysis ID is already in use.",
+                                )
+                            return previous
+                        execution = cached.model_copy(
+                            update={
+                                "id": execution_id,
+                                "request_id": request_id,
+                                "latency_ms": 0,
+                                "started_at": datetime.now(UTC),
+                                "usage": Usage(),
+                                "retry_count": 0,
+                                "reused_from": cached.id,
+                            }
+                        )
+                        tx.insert(execution)
+                        logger.info(
+                            json.dumps(
+                                {
+                                    "event": "ai_execution_reused",
+                                    "id": str(execution_id),
+                                    "request_id": request_id,
+                                    "reused_from": str(cached.id),
+                                }
+                            )
+                        )
+                        return execution
             result = await self.analyzer.run(
-                Sources(reports, actions),
+                sources,
                 request_id=request_id,
                 execution_id=execution_id,
                 shift_id=shift_id,
@@ -106,7 +162,11 @@ class Intelligence:
                     tx.insert(finding)
                     ids.append(finding.id)
                 execution = result.execution.model_copy(
-                    update={"finding_ids": tuple(ids), "duplicate_count": duplicates},
+                    update={
+                        "finding_ids": tuple(ids),
+                        "duplicate_count": duplicates,
+                        "source_fingerprint": fingerprint,
+                    },
                 )
                 tx.insert(execution)
             logger.info(

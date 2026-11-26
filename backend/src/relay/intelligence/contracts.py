@@ -150,3 +150,5 @@ class Execution(Record):
     finding_ids: tuple[UUID, ...] = ()
     abstention: Uncertainty | None = None
     failure: FailureCategory | None = None
+    source_fingerprint: str | None = None
+    reused_from: UUID | None = None
