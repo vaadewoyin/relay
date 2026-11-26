@@ -85,6 +85,10 @@ def prepare_wearable(store: SQLiteStore) -> dict[str, str]:
     service = RelayService(store)
     for report in reports():
         service.intake(report)
+    return wearable_context()
+
+
+def wearable_context() -> dict[str, str]:
     return {
         "outgoingShiftId": str(DAY.id),
         "incomingShiftId": str(EVENING.id),
