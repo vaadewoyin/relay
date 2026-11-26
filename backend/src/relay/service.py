@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Protocol
 from uuid import UUID, uuid4
 
-from pydantic import AwareDatetime, Field
+from pydantic import AwareDatetime, Field, HttpUrl
 
 from relay import rules
 from relay.domain import (
@@ -71,6 +71,8 @@ class NewAction(Contract):
 
 class ReportIntake(Command):
     source_ref: Name
+    source_url: HttpUrl | None = None
+    source_revision: AwareDatetime | None = None
     shift_id: UUID
     author_id: UUID
     asset_id: UUID
@@ -124,9 +126,13 @@ def remember_findings(tx: Session, findings: Iterable[IntegrityFinding | None]) 
 
 
 def fingerprint(command: Command) -> str:
-    payload = json.dumps(
-        command.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
-    )
+    fields = command.model_dump(mode="json")
+    if isinstance(command, ReportIntake):
+        # Preserve replay fingerprints written before source provenance was added.
+        for key in ("source_url", "source_revision"):
+            if fields[key] is None:
+                fields.pop(key)
+    payload = json.dumps(fields, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode()).hexdigest()
 
 

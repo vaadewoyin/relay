@@ -7,6 +7,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    HttpUrl,
     StringConstraints,
     model_validator,
 )
@@ -56,6 +57,8 @@ class AssetStatus(StrEnum):
 
 class OperationalReport(Record):
     source_ref: Name
+    source_url: HttpUrl | None = None
+    source_revision: AwareDatetime | None = None
     shift_id: UUID
     author_id: UUID
     asset_id: UUID
