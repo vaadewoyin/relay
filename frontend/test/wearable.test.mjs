@@ -327,3 +327,19 @@ test('an AI proposal shows exact report excerpts and retains its origin after hu
   await go('down', 'tap')
   assert.match(frame(), /AI proposal \| Human confirmed/)
 })
+
+test('the local accepted receipt remains visible while external Notion sync is pending', async () => {
+  let state = 'pending'
+  const { app, frame, go } = harness({
+    preview: async () => handover,
+    accept: async () => storedReceipt,
+    receipt: async () => ({ ...storedReceipt, notion_sync: state }),
+  })
+  await app.start()
+  await go('down', 'tap', 'tap', 'down', 'tap')
+  assert.match(frame(), /Handover receipt \| Accepted/)
+  assert.match(frame(), /Notion: Sync pending/)
+  state = 'synced'
+  await go('back', 'down', 'tap')
+  assert.match(frame(), /Notion: Synced/)
+})

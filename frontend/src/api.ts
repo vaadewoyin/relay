@@ -26,6 +26,10 @@ function nullable<T>(check: Check<T>): Check<T | null> {
   return (value): value is T | null => value === null || check(value)
 }
 
+function optional<T>(check: Check<T>): Check<T | undefined> {
+  return (value): value is T | undefined => value === undefined || check(value)
+}
+
 const evidence = record({ report_id: id, source_ref: text, quote: text })
 const finding = record({
   id,
@@ -56,6 +60,7 @@ const reportDetails = record({
   report: record({
     id,
     source_ref: text,
+    source_url: optional(nullable(text)),
     shift_id: id,
     author_id: id,
     asset_id: id,
@@ -90,6 +95,7 @@ const receipt = record({
   accepted_at: timestamp,
   transferred: list(action, 1),
   outstanding: list(action),
+  notion_sync: optional(oneOf("pending", "synced", "uncertain")),
 })
 const health = record({ status: oneOf('ok') })
 const errorBody = record({ code: text, message: text, request_id: text })

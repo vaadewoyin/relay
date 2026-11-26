@@ -67,7 +67,7 @@ export function evidencePages(source: SourceReport, index: number, count: number
   const pageCount = Math.ceil(lines.length / 4)
   return Array.from({ length: pageCount }, (_, page) => ({
     heading: `Source ${index + 1}/${count}${pageCount > 1 ? ` | ${page + 1}/${pageCount}` : ''}`,
-    source: clip(source.source_ref),
+    source: clip(source.source_url && source.source_ref.startsWith("notion:") ? "Notion | " + source.source_ref.slice(7) : source.source_ref),
     status: source.asset_status?.replaceAll('_', ' ') ?? 'No structured status',
     lines: lines.slice(page * 4, page * 4 + 4),
   }))

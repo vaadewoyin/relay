@@ -489,11 +489,12 @@ export class Wearable {
         ], 'Scroll: Choose | Tap: Select | Double tap: Back')
       }
       case 'receipt': {
-        const { transferred, outstanding, id } = screen.receipt
+        const { transferred, outstanding, id, notion_sync } = screen.receipt
         const actions = [...transferred, ...outstanding]
         return display('Handover receipt | Accepted', [
           `${transferred.length} transferred | ${outstanding.length} outstanding`,
           id,
+          ...(notion_sync ? [notion_sync === "synced" ? "Notion: Synced" : notion_sync === "uncertain" ? "Notion: Check pending write" : "Notion: Sync pending"] : []),
           `${screen.cursor + 1}/${actions.length} | ${screen.cursor < transferred.length ? 'Transferred' : 'Outstanding'}`,
           ...wrapText(actions[screen.cursor].description).slice(0, 3),
         ], 'Scroll: Items | Double tap: Back')
