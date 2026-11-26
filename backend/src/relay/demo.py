@@ -95,6 +95,37 @@ def prepare_wearable(store: SQLiteStore) -> dict[str, str]:
     }
 
 
+def prepare_intelligence(store: SQLiteStore) -> dict[str, str]:
+    context = prepare_wearable(store)
+    damper = Asset(id=demo_id("damper"), name="Synthetic east stair smoke damper FD-22")
+    with store.transaction(write=True) as tx:
+        tx.insert(damper, ignore_duplicate=True)
+    service = RelayService(store)
+    for label, text in (
+        (
+            "field",
+            "During the 13:35 alarm test, east stair damper FD-22 stayed fully open until the alarm cleared. The linkage did not move.",
+        ),
+        (
+            "panel",
+            "For the same 13:35 alarm test, I watched east stair damper FD-22 shut completely when the alarm began. It stayed closed until reset.",
+        ),
+    ):
+        service.intake(
+            ReportIntake(
+                operation_id=demo_id(f"semantic:{label}"),
+                source_ref=f"synthetic:damper:{label}",
+                shift_id=DAY.id,
+                author_id=OUTGOING.id,
+                asset_id=damper.id,
+                observed_at=at(13, 35),
+                text=f"Synthetic report: {text}",
+                synthetic=True,
+            )
+        )
+    return context
+
+
 def run(base: str) -> dict[str, object]:
     def request(
         method: str,
@@ -270,7 +301,9 @@ def run(base: str) -> dict[str, object]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("seed", "prepare-wearable", "run"))
+    parser.add_argument(
+        "command", choices=("seed", "prepare-wearable", "prepare-intelligence", "run")
+    )
     parser.add_argument("--url", default="http://127.0.0.1:8000")
     args = parser.parse_args()
     if args.command == "seed":
@@ -278,6 +311,8 @@ def main() -> None:
         print("Seeded synthetic operators, shifts and asset.")
     elif args.command == "prepare-wearable":
         print(json.dumps(prepare_wearable(SQLiteStore(database_path()))))
+    elif args.command == "prepare-intelligence":
+        print(json.dumps(prepare_intelligence(SQLiteStore(database_path()))))
     else:
         print(json.dumps(run(args.url), indent=2))
 

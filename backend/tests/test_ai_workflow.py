@@ -197,3 +197,18 @@ def test_analyzer_deadline_and_input_budget(store):
     result = run(store, provider, budget=AnalysisBudget(reports=1))
     assert result.failure == FailureCategory.BUDGET
     assert len(provider.calls) == 1
+
+
+def test_semantic_fixture_leaves_conflicting_free_text_for_model(store):
+    from relay.demo import prepare_intelligence
+
+    baseline = RelayService(store).findings()
+    prepare_intelligence(store)
+    with store.transaction() as tx:
+        semantic = [
+            report for report in tx.all(OperationalReport) if "FD-22" in report.text
+        ]
+    assert len(semantic) == 2 and all(
+        report.asset_status is None for report in semantic
+    )
+    assert RelayService(store).findings() == baseline
