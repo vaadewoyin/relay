@@ -73,3 +73,27 @@ uv run --locked --env-file .env python -m relay.intelligence.evaluate \
 The suite contains 11 positive cases, 11 negative cases, and two deterministic invalid-evidence exercises. A match requires the expected finding type and evidence that includes the labeled excerpts from the correct reports. The scorer reports transport failures separately from semantic quality, and uses observed text tokens and published standard rates for a cost estimate. Actual billing depends on the account, and usage missing from responses is excluded. The live runner stops on credential, quota, or request failures. [Gemini API pricing](https://ai.google.dev/gemini-api/docs/pricing)
 
 The first full live run completed 22/22 cases on `gemini-3.1-flash-lite` with `extract-v1` and `semantic-review-v1`. Precision was 10/13, recall 10/11, and false-positive rate 2/11. Schema and emitted-proposal citation validity were 100%. Nine of 11 negative cases abstained. Both injected-report cases abstained, and the two deterministic invalid-citation exercises passed. Median latency was 5.782 seconds. Reported usage was 34,943 input and 12,448 output tokens, for an estimated standard cost of $0.02741. The model over-inferred contradictions in an ambiguous-reference case and a compatible ownership handoff. One predicted the correct ownership finding type but missed the labeled evidence anchor under the strict scorer.
+
+## Notion demo
+
+Create an internal integration in [Notion Integrations](https://www.notion.so/my-integrations). Enable Read, Insert, and Update content, then connect the integration to only a dedicated synthetic demo parent page. The adapter needs Read and Insert for its current append-only workflow. Set `NOTION_TOKEN` and `NOTION_PARENT_PAGE_ID` in ignored `backend/.env`. The safe [.env.example](.env.example) lists configuration names.
+
+From `backend/`, run `uv run --locked --env-file .env python -m relay.notion.demo provision`. Save the three returned data-source IDs in the same ignored file. You can also create the three databases manually with the property names and types in [the workspace schema](src/relay/notion/demo.py) and set their data-source IDs. If provisioning loses a response, inspect the parent page before repeating it. If some databases were already created, set their IDs first so provisioning can skip them.
+
+```bash
+mkdir -p ../artifacts
+export RELAY_DB_PATH="$(mktemp -d)/relay.sqlite3"
+uv run --locked --env-file .env python -m relay.notion.demo seed > ../artifacts/wearable-context.json
+uv run --locked --env-file .env python -m relay.api
+```
+
+1. Call `GET /notion/connection` and `POST /notion/import` in Swagger. The seed creates three synthetic pump and bypass rows. Check the returned report IDs and their source URLs.
+2. Call `POST /ai/analyses` with the outgoing shift ID in the saved context. The wearable reads stored findings. Unchanged Notion input can reuse a successful analysis for the same model and prompt versions.
+3. Launch the wearable using the saved context. Inspect the Notion-sourced evidence, review the finding, and explicitly accept the handover.
+4. Call `POST /notion/receipts/{receipt_id}/sync` for the stored receipt. Check **Handover Receipts** and **Action Register** in Notion, then call the same endpoint again. Reopen the wearable receipt to refresh its sync status.
+
+Imports are immutable snapshots. Report page IDs anchor idempotency, and an edited revision appears as an explicit review conflict. The Action Register appends an ownership event for each authorized transfer with a stable action ID and version. Sort by version for current ownership. Relay never rewrites external operator edits. A definite failure can be retried. An uncertain create queries for the same key and waits for reconciliation before any additional create. This favors preventing duplicates over automatic recovery when a remote write outcome remains unknown. A locally accepted receipt stays authoritative throughout.
+
+This integration uses bearer authentication and the Notion **2026-03-11** REST contract. A database contains data sources, data-source queries paginate page rows, and page creation uses a data-source parent. The workspace uses title, rich text, date, checkbox, number, and URL properties. Report content lives in the Report property so block traversal is unnecessary. HTTP requests have bounded retries and observe short `Retry-After` values. [Data-source query](https://developers.notion.com/reference/query-a-data-source) · [Capabilities](https://developers.notion.com/reference/capabilities) · [Request limits](https://developers.notion.com/reference/request-limits)
+
+Use synthetic reports and a trusted single-worker loopback deployment. Restrict production access and store credentials server-side. Preserve human confirmation when publishing outcomes to external systems. [Even Hub developer terms](https://support.evenrealities.com/hc/en-us/articles/15606676690703-Even-Hub-Developer-Platform-Terms-of-Service)

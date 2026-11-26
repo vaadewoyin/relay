@@ -55,3 +55,9 @@ A provider-independent analyzer runs `extract-v1` and `semantic-review-v1` in se
 Relay validates report scope, exact excerpts, asset and action relationships, and the human-review action vocabulary before persistence. Duplicate semantic proposals and matching deterministic findings with the same cited report set are suppressed. Passing those checks establishes provenance. A human reviewer decides whether the evidence justifies the semantic conclusion. The model has no tools or authority to update actions, accept a handover, or write a receipt. A human acknowledgment changes review status through the existing API and preserves the AI provenance.
 
 The official simulator verified the live FD-22 proposal, both original excerpts, human acknowledgment, deterministic transfer with Gemini unconfigured, and receipt retrieval after restarting the backend. The first evaluation exposed false positives on ambiguous and compatible language even with exact evidence. Keep abstention and human review as system requirements. See the [backend evaluation instructions](../backend/README.md).
+
+## Notion synchronization
+
+The infrastructure adapter queries Notion data sources and maps typed report properties to existing intake commands. Stable page identity makes imports replay-safe. A changed external snapshot is surfaced for review. The stored report supplies exact evidence, an external page ID, and a source URL. The analysis layer can reuse a successful run for unchanged Notion inputs.
+
+Notion publishing is a separate command on a stored handover receipt. Relay appends one remote receipt and one ownership event per transferred action. The local receipt and per-effect publication state provide durable retry context. If Notion might have accepted a create, Relay queries by the stable key before taking further action. The glasses keep the local acceptance visible and display remote sync status separately.
