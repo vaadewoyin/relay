@@ -16,9 +16,10 @@ Submission is due November 29, 2026 at 20:59 WAT. Budget is $10 and approximatel
 - [x] Add explicit acceptance, transactional receipts, version checks and idempotent retries. Cover stale state and duplicate actions with Pytest.
 - [x] Independently review and accept the deterministic Phase 1 workflow.
 - [x] Connect the wearable queue, source evidence and confirmation screens to the API. Verify the seeded shift, persistent receipt, stale preview and offline recovery in the official simulator.
-- [ ] Independently review the Phase 2 wearable flow before starting AI or external integrations.
+- [x] Accept the Phase 2 wearable flow and rerun the full Phase 2 verification.
+- [x] Generate structured Gemini proposals, validate source evidence, and record human review in the simulator. Verify deterministic fallback.
+- [ ] Independently review Phase 3 and its live evaluation before starting further integrations.
 - [ ] Verify real Notion import and write-back against a test data source. Exercise the sync outage and retry path.
-- [ ] Add Gemini structured proposals and evidence validation. Demonstrate the deterministic fallback.
 - [ ] Run frontend and backend checks in GitHub Actions. Record the simulator workflow and prepare submission materials.
 
 ## P1 · After the core demo works

@@ -16,3 +16,7 @@ Follow [frontend/AGENTS.md](frontend/AGENTS.md) for frontend engineering. Phase 
 - Preserve immutable source text and check evidence against the original report. Treat integrity findings as proposals for human review. An incoming operator's explicit acceptance authorizes the transfer.
 - Keep synthetic fixtures reproducible. Cover observed failures with deterministic assertions before adding model-based evaluation. Log structured operational metadata without source text, credentials, or request bodies.
 - Keep the demonstration service on loopback with synthetic data. Review the deterministic Phase 1 workflow independently before introducing external AI or synchronization.
+
+- Version extraction and proposal prompts whenever their instructions change. Keep report data in an untrusted channel and expose no operational tools to the model.
+- Ground model output against stored evidence before persisting pending proposals. Keep proposal review and responsibility transfer under the existing human-authorized commands.
+- For AI work, run the deterministic validator suite before an opt-in live evaluation. Record prompt and dataset versions, semantic metrics, failures, latency, and observed token usage. Keep request content and credentials out of logs.
