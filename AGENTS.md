@@ -1,7 +1,8 @@
 # Relay Git development policy
 
 - Inspect working tree status and diffs before staging. Stage reviewed paths explicitly and preserve user-authored work and existing history.
-- Keep changes small and reviewable. Run relevant tests before committing completed milestones as meaningful, atomic Conventional Commits, using types such as `feat`, `fix`, `test`, `docs`, `refactor`, `chore`, and `ci`. Avoid commits made solely to increase contribution counts.
+- Commit individual logical engineering tasks using scoped Conventional Commits such as `feat(wearable): add finding review`. Use separate commits for independently reviewable features, fixes, tests, infrastructure, and documentation where that keeps each commit usable. Keep tests with their implementation when splitting would leave an intermediate commit broken or unverified.
+- Run relevant checks before committing. Let the work determine the number of commits. Preserve meaningful task boundaries and never manufacture commits for contribution counts.
 - Keep credentials, secrets, `.env` files, `node_modules`, and unnecessary generated artifacts out of Git. Review staged contents before committing.
 - Push verified commits regularly to the intended GitHub repository. Compare the local commit with the remote branch after pushing and report a successful push only after verification.
 - Keep the repository synchronized with GitHub and the working tree clean after each milestone where practical. Obtain explicit user approval before force-pushing, rewriting published history, or discarding existing work.
